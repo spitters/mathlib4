@@ -131,8 +131,7 @@ lemma isEquivalent_deriv_rpow_p_mul_one_sub_smoothingFn {p : ℝ} (hp : p ≠ 0)
             (IsLittleO.inv_rev ?_ (by simp))
           rw [isLittleO_const_left]
           refine Or.inr <| Tendsto.comp tendsto_norm_atTop_atTop ?_
-          exact Tendsto.comp (g := fun z => z ^ 2)
-            (tendsto_pow_atTop (by norm_num)) tendsto_log_atTop
+          exact (tendsto_pow_atTop two_ne_zero).comp tendsto_log_atTop
         _ = fun z => z ^ (p - 1) := by ext; simp
         _ =Θ[atTop] fun z => p * z ^ (p - 1) := IsTheta.const_mul_right hp <| isTheta_refl _ _
 
@@ -219,13 +218,14 @@ lemma isBigO_apply_r_sub_b (q : ℝ → ℝ) (hq_diff : DifferentiableOn ℝ q (
     (fun n => q (r i n) - q (b i * n)) =O[atTop] fun n => (deriv q n) * (r i n - b i * n) := by
   let b' := b (min_bi b) / 2
   have hb_pos : 0 < b' := by have := R.b_pos (min_bi b); positivity
-  have hb_lt_one : b' < 1 := calc b (min_bi b) / 2
+  have hb_lt_one : b' < 1 := calc
+    b (min_bi b) / 2
     _ < b (min_bi b) := div_two_lt_of_pos (R.b_pos (min_bi b))
     _ < 1 := R.b_lt_one (min_bi b)
   have hb : b' ∈ Set.Ioo 0 1 := ⟨hb_pos, hb_lt_one⟩
-  have hb' (i) : b' ≤ b i := calc b (min_bi b) / 2
-    _ ≤ b i / 2 := by gcongr; aesop
-    _ ≤ b i := le_of_lt <| div_two_lt_of_pos (R.b_pos i)
+  have hb' (i) : b' ≤ b i := calc
+    b (min_bi b) / 2 ≤ b i / 2 := by gcongr; aesop
+               _ ≤ b i := le_of_lt <| div_two_lt_of_pos (R.b_pos i)
   obtain ⟨c₁, _, c₂, _, hq_poly⟩ := hq_poly b' hb
   rw [isBigO_iff]
   refine ⟨c₂, ?_⟩
@@ -237,7 +237,7 @@ lemma isBigO_apply_r_sub_b (q : ℝ → ℝ) (hq_diff : DifferentiableOn ℝ q (
   rw [norm_mul, ← mul_assoc]
   refine Convex.norm_image_sub_le_of_norm_deriv_le
     (s := Set.Icc (b' * n) n) (fun z hz => ?diff) (fun z hz => (hn z hz).2)
-    (convex_Icc _ _) ?mem_Icc <| ⟨h_bi_le_r i, by exact_mod_cast (le_of_lt (R.r_lt_n i n h_ge_n₀))⟩
+    (convex_Icc _ _) ?mem_Icc <| ⟨h_bi_le_r i, mod_cast (le_of_lt (R.r_lt_n i n h_ge_n₀))⟩
   case diff =>
     refine hq_diff.differentiableAt (Ioi_mem_nhds ?_)
     calc 1 < b' * n := h_bn
@@ -255,9 +255,8 @@ lemma rpow_p_mul_one_sub_smoothingFn_le :
   intro i
   let q : ℝ → ℝ := fun x => x ^ (p a b) * (1 - ε x)
   have h_diff_q : DifferentiableOn ℝ q (Set.Ioi 1) := by
-    refine DifferentiableOn.mul
-      (DifferentiableOn.mono (differentiableOn_rpow_const _) fun z hz => ?_)
-        differentiableOn_one_sub_smoothingFn
+    refine ((differentiableOn_rpow_const _).mono fun z hz => ?_).mul
+      differentiableOn_one_sub_smoothingFn
     rw [Set.mem_compl_singleton_iff]
     rw [Set.mem_Ioi] at hz
     exact ne_of_gt <| zero_lt_one.trans hz
@@ -414,9 +413,7 @@ lemma rpow_p_mul_one_add_smoothingFn_ge :
           refine sub_nonneg_of_le <|
             (strictAntiOn_smoothingFn.le_iff_ge ?n_gt_one ?bn_gt_one).mpr ?le
           case n_gt_one =>
-            change 1 < (n : ℝ)
-            rw [Nat.one_lt_cast]
-            exact hn'
+            rwa [Set.mem_Ioi, Nat.one_lt_cast]
           case bn_gt_one =>
             calc 1 = b i * (b i)⁻¹ := by rw [mul_inv_cancel₀ (by positivity)]
                 _ ≤ b i * ⌈(b i)⁻¹⌉₊ := by gcongr; exact Nat.le_ceil _
@@ -456,31 +453,24 @@ lemma T_isBigO_smoothingFn_mul_asympBound :
   refine ⟨2 * c₁⁻¹, ?_⟩
   filter_upwards [
     eventually_ge_atTop n₀,
-    -- bound1
     R.rpow_p_mul_one_sub_smoothingFn_le,
-    -- h_smoothing_pos
     eventually_one_sub_smoothingFn_pos,
-    -- h_sumTransform
     h_sumTransform_aux,
-    -- h_smoothing_gt_half
     eventually_one_sub_smoothingFn_gt_const (1 / 2) (by norm_num),
-    -- h_bi_le_r
     R.eventually_bi_mul_le_r,
-    -- n₀_div_le_n
     eventually_ge_atTop ⌈n₀ / b'⌉₊]
       with n hn bound1 h_smoothing_pos h_sumTransform h_smoothing_gt_half h_bi_le_r n₀_div_le_n
-  --have n₀_le_bn : n₀ ≤ b' * n := by
-  --  sorry
   have n₀_le_r : ∀ i, n₀ ≤ r i n := by
     intro i
     exact_mod_cast
-      calc n₀ ≤ b' * n := by
-                have : (n₀ : ℝ) / b' ≤ n := by
-                  exact_mod_cast calc
-                    (n₀ : ℝ) / b' ≤ ⌈n₀ / b'⌉₊ := Nat.le_ceil (↑n₀ / b')
-                    _ ≤ n := by exact_mod_cast n₀_div_le_n
-                rwa [div_le_iff₀, mul_comm] at this
-                grind only
+      calc
+        n₀ ≤ b' * n := by
+          have : (n₀ : ℝ) / b' ≤ n := by
+            exact_mod_cast calc
+              (n₀ : ℝ) / b' ≤ ⌈n₀ / b'⌉₊ := Nat.le_ceil (↑n₀ / b')
+              _ ≤ n := by exact_mod_cast n₀_div_le_n
+          rwa [div_le_iff₀, mul_comm] at this
+          grind only
         _ ≤ r i n := by grind
   have r_le_n : ∀ i, r i n < n := by grind [AkraBazziRecurrence]
   intro C hC h_ind
@@ -562,32 +552,26 @@ lemma smoothingFn_mul_asympBound_isBigO_T :
   refine ⟨2 * c₁, ?_⟩
   filter_upwards [
     eventually_ge_atTop n₀,
-    -- bound2
     R.rpow_p_mul_one_add_smoothingFn_ge,
-    -- h_smoothing_pos
     eventually_one_add_smoothingFn_pos,
-    -- h_sumTransform
     h_sumTransform_aux,
-    -- h_smoothing_gt_half
     eventually_one_sub_smoothingFn_gt_const (1 / 2) (by norm_num),
-    -- h_bi_le_r
     R.eventually_bi_mul_le_r,
-    -- n₀_div_le_n
     eventually_ge_atTop ⌈n₀ / b'⌉₊,
-    -- h_exp
     eventually_ge_atTop ⌈exp 1⌉₊]
       with n hn bound2 h_smoothing_pos h_sumTransform h_smoothing_gt_half h_bi_le_r n₀_div_le_n
         h_exp
   have n₀_le_r : ∀ i, n₀ ≤ r i n := by
     intro i
     exact_mod_cast
-      calc n₀ ≤ b' * n := by
-                have : (n₀ : ℝ) / b' ≤ n := by
-                  exact_mod_cast calc
-                    (n₀ : ℝ) / b' ≤ ⌈n₀ / b'⌉₊ := Nat.le_ceil (↑n₀ / b')
-                    _ ≤ n := by exact_mod_cast n₀_div_le_n
-                rwa [div_le_iff₀, mul_comm] at this
-                grind only
+      calc
+        n₀ ≤ b' * n := by
+          have : (n₀ : ℝ) / b' ≤ n := by
+            exact_mod_cast calc
+              (n₀ : ℝ) / b' ≤ ⌈n₀ / b'⌉₊ := Nat.le_ceil (↑n₀ / b')
+              _ ≤ n := by exact_mod_cast n₀_div_le_n
+          rwa [div_le_iff₀, mul_comm] at this
+          grind only
         _ ≤ r i n := by grind
   have r_le_n : ∀ i, r i n < n := by grind [AkraBazziRecurrence]
   intro C hC h_ind
