@@ -491,6 +491,7 @@ variable [IsScalarTower S S' S'']
 open Extension
 
 set_option backward.isDefEq.respectTransparency false in
+-- TODO rename
 @[simp]
 lemma repr_CotangentSpaceMap (f : Hom P P') (i j) :
     P'.cotangentSpaceBasis.repr (CotangentSpace.map f.toExtensionHom (P.cotangentSpaceBasis i)) j =

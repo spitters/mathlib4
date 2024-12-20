@@ -267,6 +267,7 @@ lemma germ_stalkClosedPointIso_hom :
   rw [← ΓSpecIso_hom_stalkClosedPointIso_inv, Category.assoc, Iso.inv_hom_id, Category.comp_id]
 
 set_option backward.isDefEq.respectTransparency false in
+-- TODO rename
 lemma Spec_stalkClosedPointIso :
     Spec.map (stalkClosedPointIso R).inv = (Spec R).fromSpecStalk (closedPoint R) := by
   rw [stalkClosedPointIso_inv, Spec.fromSpecStalk_eq']

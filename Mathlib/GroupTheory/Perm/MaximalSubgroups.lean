@@ -159,6 +159,7 @@ theorem stabilizer_ne_top_of_nonempty_of_nonempty_compl
   aesop
 
 set_option backward.isDefEq.respectTransparency false in
+-- TODO rename exists_isSwap_of_stabilizer_lt
 theorem has_swap_mem_of_lt_stabilizer [DecidableEq α]
     (s : Set α) (G : Subgroup (Perm α))
     (hG : stabilizer (Perm α) s < G) :

@@ -39,6 +39,7 @@ def UniquelyDecodable (S : Set (List α)) : Prop :=
 
 variable {S : Set (List α)}
 
+-- TODO rename
 /-- If a code is uniquely decodable, it does not contain the empty string.
 
 The empty string can be "decoded" as either zero or two copies of itself,

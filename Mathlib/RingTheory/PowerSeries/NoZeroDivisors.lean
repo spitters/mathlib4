@@ -49,6 +49,7 @@ instance [Ring R] [IsDomain R] : IsDomain R⟦X⟧ :=
 variable [CommRing R] [IsDomain R]
 
 set_option backward.isDefEq.respectTransparency false in
+-- TODO rename
 /-- The ideal spanned by the variable in the power series ring
 over an integral domain is a prime ideal. -/
 theorem span_X_isPrime : (Ideal.span ({X} : Set R⟦X⟧)).IsPrime := by
@@ -59,6 +60,7 @@ theorem span_X_isPrime : (Ideal.span ({X} : Set R⟦X⟧)).IsPrime := by
   intro φ
   rw [RingHom.mem_ker, Ideal.mem_span_singleton, X_dvd_iff]
 
+-- TODO rename
 /-- The variable of the power series ring over an integral domain is prime. -/
 theorem X_prime : Prime (X : R⟦X⟧) := by
   rw [← Ideal.span_singleton_prime]
@@ -67,6 +69,7 @@ theorem X_prime : Prime (X : R⟦X⟧) := by
     simpa [map_zero (coeff 1)] using congr_arg (coeff 1) h
 
 set_option backward.isDefEq.respectTransparency false in
+-- TODO rename
 /-- The variable of the power series ring over an integral domain is irreducible. -/
 theorem X_irreducible : Irreducible (X : R⟦X⟧) := X_prime.irreducible
 

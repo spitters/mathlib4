@@ -104,6 +104,7 @@ for the cardinality of a given basis.
 When `finrank R V = 1`, up to a linear equivalence `V ≃ₗ[R] R`,
 then any `f` is *right*-multiplication by some `a : K`,
 but not necessarily *left*-multiplication by an element of the center of `R`. -/
+-- TODO rename not_linearIndependent
 theorem exists_mem_center_apply_eq_smul_of_forall_notLinearIndependent_of_basis
     [Ring R] [IsDomain R] [AddCommGroup V] [Module R V]
     {f : V →ₗ[R] V}
@@ -190,6 +191,7 @@ When `R`does not satisfy `StrongRankCondition`, use
 When `finrank R V = 1`, up to a linear equivalence `V ≃ₗ[R] R`,
 then any `f` is *right*-multiplication by some `a : K`,
 but not necessarily *left*-multiplication by an element of the center of `R`. -/
+-- TODO rename not_linearIndependent
 theorem exists_mem_center_apply_eq_smul_of_forall_notLinearIndependent
     [Ring R] [IsDomain R] [StrongRankCondition R]
     [AddCommGroup V] [Module R V] [Free R V]
@@ -212,6 +214,7 @@ theorem exists_mem_center_apply_eq_smul_of_forall_notLinearIndependent
 /-- Over a commutative domain, an endomorphism `f` of a free module `V`
 such that `f v` and `v` are colinear, for all `v : V`,
 consists of homotheties. -/
+-- TODO rename not_linearIndependent
 theorem exists_eq_smul_id_of_forall_notLinearIndependent
     [CommRing R] [IsDomain R] [AddCommGroup V] [Module R V] [Free R V] {f : V →ₗ[R] V}
     (h : ∀ v, ¬ LinearIndependent R ![v, f v]) :

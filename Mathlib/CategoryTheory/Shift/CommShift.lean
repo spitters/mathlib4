@@ -114,6 +114,7 @@ lemma isoAdd'_isoZero {a : A}
     shiftFunctorAdd'_add_zero_inv_app]
 
 set_option backward.isDefEq.respectTransparency false in
+-- TODO rename
 lemma isoZero_isoAdd'_ {a : A}
     (e : shiftFunctor C a ⋙ F ≅ F ⋙ shiftFunctor D a) :
     isoAdd' (zero_add a) (isoZero F A) e = e := by

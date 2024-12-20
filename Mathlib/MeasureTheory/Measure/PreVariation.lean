@@ -98,12 +98,14 @@ lemma mono {s₁ s₂ : Set X} (hs₂ : MeasurableSet s₂) (h : s₁ ⊆ s₂) 
     simp_all [preVariationFun]
   · simp [preVariationFun, hs₁]
 
+-- TODO rename
 lemma exists_Finpartition_sum_gt {s : Set X} (hs : MeasurableSet s) {a : ℝ≥0∞}
     (ha : a < preVariationFun f s) : ∃ P : Finpartition (⟨s, hs⟩ : Subtype MeasurableSet),
     a < ∑ p ∈ P.parts, f p := by
   simp_all [preVariationFun, lt_iSup_iff]
 
 set_option backward.isDefEq.respectTransparency false in
+-- TODO rename
 lemma exists_Finpartition_sum_ge {s : Set X} (hs : MeasurableSet s) {ε : ℝ≥0} (hε : 0 < ε)
     (h : preVariationFun f s ≠ ⊤) :
     ∃ P : Finpartition (⟨s, hs⟩ : Subtype MeasurableSet),

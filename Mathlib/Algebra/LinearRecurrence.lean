@@ -79,6 +79,7 @@ def mkSol (init : Fin E.order → R) : ℕ → R
         have _ : n - E.order + k < n := by lia
         E.coeffs k * mkSol init (n - E.order + k)
 
+-- TODO rename
 /-- `E.mkSol` indeed gives solutions to `E`. -/
 theorem is_sol_mkSol (init : Fin E.order → R) : E.IsSolution (E.mkSol init) := by
   intro n
@@ -91,6 +92,7 @@ theorem mkSol_eq_init (init : Fin E.order → R) : ∀ n : Fin E.order, E.mkSol 
   rw [mkSol]
   simp only [n.is_lt, dif_pos, Fin.mk_val]
 
+-- TODO rename
 /-- If `u` is a solution to `E` and `init` designates its first `E.order` values,
   then `∀ n, u n = E.mkSol init n`. -/
 theorem eq_mk_of_is_sol_of_eq_init {u : ℕ → R} {init : Fin E.order → R} (h : E.IsSolution u)
@@ -105,6 +107,7 @@ theorem eq_mk_of_is_sol_of_eq_init {u : ℕ → R} {init : Fin E.order → R} (h
     rw [eq_mk_of_is_sol_of_eq_init h heq (n - E.order + k)]
     simp
 
+-- TODO rename
 /-- If `u` is a solution to `E` and `init` designates its first `E.order` values,
   then `u = E.mkSol init`. This proves that `E.mkSol init` is the only solution
   of `E` whose first `E.order` values are given by `init`. -/
@@ -119,6 +122,7 @@ def solSpace : Submodule R (ℕ → R) where
   add_mem' {u v} hu hv n := by simp [mul_add, sum_add_distrib, hu n, hv n]
   smul_mem' a u hu n := by simp [hu n, mul_sum]; grind
 
+-- TODO rename
 /-- Defining property of the solution space : `u` is a solution
   iff it belongs to the solution space. -/
 theorem is_sol_iff_mem_solSpace (u : ℕ → R) : E.IsSolution u ↔ u ∈ E.solSpace :=
@@ -138,6 +142,7 @@ def toInit : E.solSpace ≃ₗ[R] Fin E.order → R where
   left_inv u := by ext n; exact E.eq_mk_of_is_sol_of_eq_init u.2 (fun _ => rfl) _ |>.symm
   right_inv u := funext_iff.mpr fun n ↦ E.mkSol_eq_init u n
 
+-- TODO rename
 /-- Two solutions are equal iff they are equal on `range E.order`. -/
 theorem sol_eq_of_eq_init (u v : ℕ → R) (hu : E.IsSolution u) (hv : E.IsSolution v) :
     u = v ↔ Set.EqOn u v ↑(range E.order) := by
@@ -176,6 +181,7 @@ section StrongRankCondition
 -- `commRing_strongRankCondition`, is in a much later file.
 variable {R : Type*} [CommRing R] [StrongRankCondition R] (E : LinearRecurrence R)
 
+-- TODO rename
 /-- The dimension of `E.solSpace` is `E.order`. -/
 theorem solSpace_rank : Module.rank R E.solSpace = E.order :=
   letI := nontrivial_of_invariantBasisNumber R
@@ -192,6 +198,7 @@ variable {R : Type*} [CommRing R] (E : LinearRecurrence R)
 def charPoly : R[X] :=
   Polynomial.monomial E.order 1 - ∑ i : Fin E.order, Polynomial.monomial i (E.coeffs i)
 
+-- TODO rename degree_charPoly
 @[simp]
 theorem charPoly_degree_eq_order [Nontrivial R] : (charPoly E).degree = E.order := by
   rw [charPoly, degree_sub_eq_left_of_degree_lt]
@@ -199,6 +206,7 @@ theorem charPoly_degree_eq_order [Nontrivial R] : (charPoly E).degree = E.order 
   simp_rw [← C_mul_X_pow_eq_monomial]
   exact degree_sum_fin_lt E.coeffs
 
+-- TODO rename monic_charPoly
 theorem charPoly_monic : charPoly E |>.Monic := by
   nontriviality R
   rw [Monic, leadingCoeff, natDegree_eq_of_degree_eq_some <| charPoly_degree_eq_order _, charPoly,
@@ -207,6 +215,7 @@ theorem charPoly_monic : charPoly E |>.Monic := by
   grw [degree_monomial_le]
   simp
 
+-- TODO rename isSolution_geom_iff_isRoot_charPoly
 /-- The geometric sequence `q^n` is a solution of `E` iff
   `q` is a root of `E`'s characteristic polynomial. -/
 theorem geom_sol_iff_root_charPoly (q : R) :

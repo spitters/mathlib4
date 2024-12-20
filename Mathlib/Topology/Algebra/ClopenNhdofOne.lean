@@ -43,6 +43,7 @@ namespace ProfiniteGrp
 variable {G : Type*} [Group G] [TopologicalSpace G]
     [IsTopologicalGroup G] [CompactSpace G] [TotallyDisconnectedSpace G]
 
+-- TODO rename exists
 theorem exist_openNormalSubgroup_sub_open_nhds_of_one
     {U : Set G} (UOpen : IsOpen U) (einU : 1 ∈ U) :
     ∃ H : OpenNormalSubgroup G, (H : Set G) ⊆ U := by

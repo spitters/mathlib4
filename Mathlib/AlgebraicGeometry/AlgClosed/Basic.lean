@@ -43,6 +43,7 @@ def residueFieldIsoBase : X.residueField x ≅ .of K :=
     infer_instance
   (asIso (Spec.preimage (X.fromSpecResidueField x ≫ f))).symm
 
+-- TODO rename
 @[simp, reassoc]
 lemma SpecMap_residueFieldIsoBase_inv :
     Spec.map (residueFieldIsoBase f x hx).inv = X.fromSpecResidueField x ≫ f :=
