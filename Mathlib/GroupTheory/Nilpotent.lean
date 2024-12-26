@@ -242,6 +242,7 @@ theorem upperCentralSeries_mono : Monotone (upperCentralSeries G) := by
   exact mul_mem hx (Normal.conj_mem inferInstance x⁻¹ (inv_mem hx) y)
 
 set_option backward.isDefEq.respectTransparency false in
+-- Rename all the below
 /-- A group `G` is nilpotent iff there exists an ascending central series which reaches `G` in
   finitely many steps. -/
 -- todo rename isNilpotent_iff_finite_isAscendingCentralSeries
