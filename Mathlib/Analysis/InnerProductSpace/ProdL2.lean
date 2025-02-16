@@ -119,7 +119,7 @@ theorem coe_orthogonalDecomposition :
     (K.orthogonalDecomposition : E →L[𝕜] WithLp 2 (K × Kᗮ)) =
       (WithLp.prodContinuousLinearEquiv 2 𝕜 K Kᗮ).symm ∘L
         K.orthogonalProjection.prod Kᗮ.orthogonalProjection := by
-  ext; simp
+  ext <;> simp
 
 set_option backward.isDefEq.respectTransparency false in
 theorem coe_orthogonalDecomposition_symm :
