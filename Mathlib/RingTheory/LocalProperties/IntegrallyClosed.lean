@@ -32,7 +32,7 @@ set_option backward.isDefEq.respectTransparency false in
 theorem IsIntegrallyClosed.iInf {ι : Type*} (S : ι → Subalgebra R K)
     (h : ∀ i, IsIntegrallyClosed (S i)) :
     IsIntegrallyClosed (⨅ i, S i : Subalgebra R K) := by
-  refine (isIntegrallyClosed_iff K).mpr (fun {x} hx ↦ CanLift.prf x (Algebra.mem_iInf.mpr ?_))
+  refine (isIntegrallyClosed_iff K).mpr (fun {x} hx ↦ ⟨⟨x, Algebra.mem_iInf.mpr ?_⟩, rfl⟩)
   intro i
   have le : (⨅ i : ι, S i : Subalgebra R K) ≤ S i := iInf_le S i
   algebraize [(Subalgebra.inclusion le).toRingHom]
