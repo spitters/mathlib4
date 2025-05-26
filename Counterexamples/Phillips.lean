@@ -414,7 +414,7 @@ theorem continuousPart_evalCLM_eq_zero [TopologicalSpace α] [DiscreteTopology �
     f.continuousPart s = f.continuousPart (s \ {x}) :=
       (continuousPart_apply_diff _ _ _ (countable_singleton x)).symm
     _ = f (univ \ f.discreteSupport ∩ (s \ {x})) := by simp [continuousPart]
-    _ = indicator (univ \ f.discreteSupport ∩ (s \ {x})) 1 x := rfl
+    _ = indicator (univ \ f.discreteSupport ∩ (s \ {x})) 1 x := rfl -- TODO
     _ = 0 := by simp
 
 set_option backward.isDefEq.respectTransparency false in
