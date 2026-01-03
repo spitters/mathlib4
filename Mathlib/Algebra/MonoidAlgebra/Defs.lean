@@ -745,10 +745,9 @@ def curryRingEquiv : R[M × N] ≃+* R[N][M] where
 
 @[to_additive (dont_translate := R) (attr := simp)]
 lemma curryRingEquiv_single (m : M) (n : N) (r : R) :
-    curryRingEquiv (single (m, n) r) = single m (single n r) := by
-  simp [curryRingEquiv]
+    curryRingEquiv (single (m, n) r) = single m (single n r) := by simp [curryRingEquiv]
 
-@[to_additive (attr := simp)]
+@[to_additive (dont_translate := R) (attr := simp)]
 lemma curryRingEquiv_symm_single (m : M) (n : N) (r : R) :
     curryRingEquiv.symm (single m <| single n r) = (single (m, n) r) := by
   simp [curryRingEquiv, RingEquiv.symm_apply_eq]
