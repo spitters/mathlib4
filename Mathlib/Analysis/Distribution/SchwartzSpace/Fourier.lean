@@ -181,7 +181,7 @@ with `-(2 * π * Complex.I) • innerSL ℝ`. -/
 theorem fderivCLM_fourier_eq (f : 𝓢(V, E)) :
     fderivCLM 𝕜 V E (𝓕 f) = 𝓕 (-(2 * π * Complex.I) • smulRightCLM ℂ E (innerSL ℝ) f) := by
   ext1 x
-  change fderiv ℝ (𝓕 ⇑f) x = _
+  change fderiv ℝ (𝓕 ⇑f) x = _ -- TODO review
   calc
     _ = 𝓕 (VectorFourier.fourierSMulRight (innerSL ℝ) f) x := by
       rw [fderiv_fourier f.integrable]
@@ -192,7 +192,7 @@ theorem fderivCLM_fourier_eq (f : 𝓢(V, E)) :
 theorem fourier_fderivCLM_eq (f : 𝓢(V, E)) :
     𝓕 (fderivCLM 𝕜 V E f) = (2 * π * Complex.I) • smulRightCLM ℂ E (innerSL ℝ) (𝓕 f) := by
   ext x m
-  change 𝓕 (fderiv ℝ ⇑f) x m = _
+  change 𝓕 (fderiv ℝ ⇑f) x m = _ -- TODO review
   simp [fourier_fderiv f.integrable f.differentiable (fderivCLM ℝ V E f).integrable,
     innerSL_apply_apply ℝ, fourier_coe]
 
@@ -202,7 +202,7 @@ open LineDeriv
 of the multiplication with `-(2 * π * Complex.I) • (inner ℝ · m)`. -/
 theorem lineDerivOp_fourier_eq (f : 𝓢(V, E)) (m : V) :
     ∂_{m} (𝓕 f) = 𝓕 (-(2 * π * Complex.I) • smulLeftCLM E (inner ℝ · m) f) := by
-  change SchwartzMap.evalCLM ℝ V E m (fderivCLM ℝ V E (𝓕 f)) = _
+  change SchwartzMap.evalCLM ℝ V E m (fderivCLM ℝ V E (𝓕 f)) = _ -- TODO review
   rw [fderivCLM_fourier_eq, ← fourier_evalCLM_eq]
   congr
   ext
@@ -213,7 +213,7 @@ theorem lineDerivOp_fourier_eq (f : 𝓢(V, E)) (m : V) :
 `(2 * π * Complex.I) • (inner ℝ · m)` with the Fourier transform. -/
 theorem fourier_lineDerivOp_eq (f : 𝓢(V, E)) (m : V) :
     𝓕 (∂_{m} f) = (2 * π * Complex.I) • smulLeftCLM E (inner ℝ · m) (𝓕 f) := by
-  change 𝓕 (SchwartzMap.evalCLM ℝ V E m (fderivCLM ℝ V E f)) = _
+  change 𝓕 (SchwartzMap.evalCLM ℝ V E m (fderivCLM ℝ V E f)) = _ -- TODO review
   ext
   have : (inner ℝ · m).HasTemperateGrowth := ((innerSL ℝ).flip m).hasTemperateGrowth
   simp [fourier_evalCLM_eq ℝ, fourier_fderivCLM_eq, this, innerSL_apply_apply ℝ]
