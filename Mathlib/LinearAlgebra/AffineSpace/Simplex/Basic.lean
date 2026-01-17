@@ -454,7 +454,10 @@ lemma setInterior_restrict (I : Set k) {n : ℕ} (s : Simplex k P n) {S : Affine
   rw [← S.subtype_injective.image_injective.eq_iff,
     Set.image_preimage_eq_of_subset (s.setInterior_subset_affineSpan.trans (by simpa using hS)),
     ← (s.restrict S hS).setInterior_map I S.subtype_injective]
-  rfl
+  -- TODO review
+  apply congr_arg
+  ext
+  simp only [map_points, AffineSubspace.coe_subtype, comp_apply, restrict_points_coe]
 
 variable [PartialOrder k]
 
