@@ -189,6 +189,16 @@ theorem trans_assoc {x₀ x₁ x₂ x₃ : X} (p : Path x₀ x₁) (q : Path x�
     ((p.trans q).trans r).Homotopic (p.trans (q.trans r)) :=
   ⟨Homotopy.transAssoc p q r⟩
 
+/-- If `γ.trans γ'.symm` is nullhomotopic, then `γ` and `γ'` are homotopic.
+This is the path-homotopy analogue of `a * b⁻¹ = 1 → a = b`. -/
+theorem eq_of_trans_symm {γ γ' : Path x₀ x₁}
+    (h : (γ.trans γ'.symm).Homotopic (Path.refl x₀)) : γ.Homotopic γ' :=
+  (trans_refl γ).symm |>.trans <|
+  (hcomp (.refl γ) (symm_trans γ').symm) |>.trans <|
+  (trans_assoc γ γ'.symm γ').symm |>.trans <|
+  (hcomp h (.refl γ')) |>.trans <|
+  refl_trans γ'
+
 namespace Quotient
 
 @[simp, grind =]
