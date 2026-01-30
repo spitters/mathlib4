@@ -773,6 +773,7 @@ theorem LinearIndepOn.linearIndepOn_extend (hs : LinearIndepOn K v s) (hst : s �
 
 set_option backward.isDefEq.respectTransparency false in
 -- TODO(Mario): rewrite?
+-- TODO: yes please
 theorem exists_of_linearIndepOn_of_finite_span {s : Set V} {t : Finset V}
     (hs : LinearIndepOn K id s) (hst : s ⊆ (span K ↑t : Submodule K V)) :
     ∃ t' : Finset V, ↑t' ⊆ s ∪ ↑t ∧ s ⊆ ↑t' ∧ t'.card = t.card := by
