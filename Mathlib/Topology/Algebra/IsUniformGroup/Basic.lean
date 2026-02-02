@@ -347,25 +347,20 @@ variable (G : Type*) [Group G] [TopologicalSpace G] [IsTopologicalGroup G]
     (IsTopologicalGroup.rightUniformSpace Gᵐᵒᵖ).comap MulOpposite.op =
       IsTopologicalGroup.leftUniformSpace G := by
   ext : 1
-  change comap (fun (x : G × G) ↦ (MulOpposite.op x.1, MulOpposite.op x.2))
-      (comap (fun p : Gᵐᵒᵖ × Gᵐᵒᵖ => p.2 * p.1⁻¹) (𝓝 1))
-    = comap (fun p : G × G => p.1⁻¹ * p.2) (𝓝 1)
   have : 𝓝 (1 : G) = comap (MulOpposite.opHomeomorph) (𝓝 (1 : Gᵐᵒᵖ)) := by
     simp [Homeomorph.comap_nhds_eq]
-  simp_rw [comap_comap, this, comap_comap]
-  rfl
+  simp only [uniformity, UniformSpace.uniformity, div_eq_mul_inv]
+  simp_rw [comap_comap, this, comap_comap, Function.comp_def, opHomeomorph_apply, op_mul, op_inv]
 
 @[to_additive] lemma comap_op_leftUniformSpace :
     (IsTopologicalGroup.leftUniformSpace Gᵐᵒᵖ).comap MulOpposite.op =
       IsTopologicalGroup.rightUniformSpace G := by
   ext : 1
-  change comap (fun (x : G × G) ↦ (MulOpposite.op x.1, MulOpposite.op x.2))
-      (comap (fun p : Gᵐᵒᵖ × Gᵐᵒᵖ => p.1⁻¹ * p.2) (𝓝 1))
-    = comap (fun p : G × G => p.2 / p.1) (𝓝 1)
   have : 𝓝 (1 : G) = comap (MulOpposite.opHomeomorph) (𝓝 (1 : Gᵐᵒᵖ)) := by
     simp [Homeomorph.comap_nhds_eq]
-  simp_rw [comap_comap, this, comap_comap, div_eq_mul_inv]
-  rfl
+  simp only [uniformity, UniformSpace.uniformity]
+  simp_rw [comap_comap, this, comap_comap, div_eq_mul_inv, Function.comp_def, opHomeomorph_apply,
+    op_mul, op_inv]
 
 /-- The equivalence between a topological group `G` and `Gᵐᵒᵖ` as a uniform equivalence when `G`
 is equipped with the right uniformity and `Gᵐᵒᵖ` with the left uniformity. -/
@@ -754,8 +749,8 @@ instance QuotientGroup.completeSpace_right (G : Type*)
     @CompleteSpace (G ⧸ N) (IsTopologicalGroup.rightUniformSpace (G ⧸ N)) := by
   have : IsTopologicalGroup.rightUniformSpace G = us := by
     ext : 1
-    simp_rw [@IsRightUniformGroup.uniformity_eq (G := G) us _ _, ← div_eq_mul_inv]
-    rfl
+    simp_rw [@IsRightUniformGroup.uniformity_eq (G := G) us _ _, ← div_eq_mul_inv,
+      uniformity, UniformSpace.uniformity]
   rw [← this] at hG
   infer_instance
 
@@ -804,8 +799,8 @@ instance QuotientGroup.completeSpace_left (G : Type*)
     @CompleteSpace (G ⧸ N) (IsTopologicalGroup.leftUniformSpace (G ⧸ N)) := by
   have : IsTopologicalGroup.leftUniformSpace G = us := by
     ext : 1
-    rw [@IsLeftUniformGroup.uniformity_eq (G := G) us _ _]
-    rfl
+    rw [@IsLeftUniformGroup.uniformity_eq (G := G) us _ _, uniformity, UniformSpace.uniformity,
+      IsTopologicalGroup.leftUniformSpace]
   rw [← this] at hG
   infer_instance
 

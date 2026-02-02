@@ -31,11 +31,9 @@ variable {K : Type u} [Field K] {X : Scheme.{u}}
 
 open MonoidalCategory CartesianMonoidalCategory MonObj
 
-set_option backward.isDefEq.respectTransparency false in
 instance (G : Over (Spec (.of K))) [GrpObj G] : IsClosedImmersion η[G].left :=
   isClosedImmersion_of_comp_eq_id (Y := Spec (.of K)) G.hom η[G].left (by simp)
 
-set_option backward.isDefEq.respectTransparency false in
 theorem isCommMonObj_of_isProper_of_isIntegral_tensorObj_of_isAlgClosed [IsAlgClosed K]
     (G : Over (Spec (.of K))) [IsProper G.hom] [IsIntegral (G ⊗ G).left] [GrpObj G] :
     IsCommMonObj G := by
@@ -92,8 +90,10 @@ theorem isCommMonObj_of_isProper_of_isIntegral_tensorObj_of_isAlgClosed [IsAlgCl
     dsimp
     rw [Set.image_preimage_eq_inter_range, Scheme.IdealSheafData.range_subschemeι,
       Scheme.Hom.support_ker, ← Set.inter_assoc, ← Set.preimage_inter,
-      Set.singleton_inter_of_mem x.2, IsClosed.closure_eq
-      (by exact γ.left.isClosedMap.isClosed_range)]
+      Set.singleton_inter_of_mem x.2]
+    -- Identifies `↥(pullback G.hom G.hom)` and `↥(G ⊗ G).left`
+    change _ ∩ Set.range ⇑γ.left ⊆ _ ∩ closure (Set.range ⇑γ.left)
+    rw [(γ.left.isClosedMap.isClosed_range).closure_eq]
   -- It suffices to check set-theoretic equality on closed points of `U ×[k] G`.
   refine ext_of_apply_eq G.hom _
     ((fst G G).left ⁻¹ᵁ U).isOpen.isLocallyClosed
