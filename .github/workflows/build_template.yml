@@ -370,42 +370,6 @@ jobs:
           cd pr-branch
           du .lake/build/lib/lean/Mathlib || echo "This code should be unreachable"
 
-      - name: upload artifact containing contents of pr-branch
-        # temporary measure for debugging no-build failures
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
-        with:
-          name: mathlib4_artifact
-          include-hidden-files: true
-          # we exclude .git since there may be secrets in there
-          path: |
-            pr-branch/
-            !pr-branch/.git/
-
-      # The cache secrets are available here, so we must not run any untrusted code.
-      - name: Upload cache to Azure
-        # We only upload the cache if the build started (whether succeeding, failing, or cancelled)
-        # but not if any earlier step failed or was cancelled.
-        # See discussion at https://leanprover.zulipchat.com/#narrow/stream/287929-mathlib4/topic/Some.20files.20not.20found.20in.20the.20cache/near/407183836
-        if: ${{ always() && steps.get.outcome == 'success' }}
-        shell: bash
-        run: |
-          cd pr-branch
-
-          # Trim trailing whitespace from secrets to prevent issues with accidentally added spaces
-          export MATHLIB_CACHE_SAS="${MATHLIB_CACHE_SAS_RAW%"${MATHLIB_CACHE_SAS_RAW##*[![:space:]]}"}"
-
-          # Use the trusted cache tool from master-branch
-          # TODO: this is not doing anything currently, and needs to be integrated with put-unpacked
-          # ../master-branch/.lake/build/bin/cache commit || true
-          # run this in CI if it gets an incorrect lake hash for existing cache files somehow
-          # ../master-branch/.lake/build/bin/cache put!
-          # do not try to upload files just downloaded
-
-          echo "Uploading cache to Azure..."
-          MATHLIB_CACHE_USE_CLOUDFLARE=0 ../master-branch/.lake/build/bin/cache --repo=${{ github.event.pull_request.head.repo.full_name || github.repository }} put-unpacked
-        env:
-          MATHLIB_CACHE_SAS_RAW: ${{ secrets.MATHLIB_CACHE_SAS }}
-
       # Note: we should not be including `Archive` and `Counterexamples` in the cache.
       # We do this for now for the sake of not rebuilding them in every CI run
       # even when they are not touched.
@@ -437,6 +401,17 @@ jobs:
           ../master-branch/scripts/lake-build-with-retry.sh Counterexamples
           # results of build at pr-branch/.lake/build_summary_Counterexamples.json
 
+      - name: upload artifact containing contents of pr-branch
+        # TODO: We should probably only upload the artifacts needed by the cache
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: mathlib4_artifact
+          include-hidden-files: true
+          # we exclude .git since there may be secrets in there
+          path: |
+            pr-branch/
+            !pr-branch/.git/
+
       - name: Check if building Archive or Counterexamples failed
         if: steps.archive.outcome == 'failure' || steps.counterexamples.outcome == 'failure'
         run: |
@@ -447,21 +422,6 @@ jobs:
             echo "❌ The \"build counterexamples\" step above failed; please check its logs."
           fi
           exit 1
-
-      # The cache secrets are available here, so we must not run any untrusted code.
-      - name: Upload Archive and Counterexamples cache to Azure
-        shell: bash
-        run: |
-          cd pr-branch
-
-          # Trim trailing whitespace from secrets to prevent issues with accidentally added spaces
-          export MATHLIB_CACHE_SAS="${MATHLIB_CACHE_SAS_RAW%"${MATHLIB_CACHE_SAS_RAW##*[![:space:]]}"}"
-
-          echo "Uploading Archive and Counterexamples cache to Azure..."
-          MATHLIB_CACHE_USE_CLOUDFLARE=0 ../master-branch/.lake/build/bin/cache --repo=${{ github.event.pull_request.head.repo.full_name || github.repository }} put-unpacked Archive.lean
-          MATHLIB_CACHE_USE_CLOUDFLARE=0 ../master-branch/.lake/build/bin/cache --repo=${{ github.event.pull_request.head.repo.full_name || github.repository }} put-unpacked Counterexamples.lean
-        env:
-          MATHLIB_CACHE_SAS_RAW: ${{ secrets.MATHLIB_CACHE_SAS }}
 
       - name: Check {Mathlib, Tactic, Counterexamples, Archive}.lean
         if: ${{ always() && steps.mk_all.outcome != 'skipped' }}
@@ -598,9 +558,76 @@ jobs:
           master-branch/scripts/lean-pr-testing-comments.sh lean
           master-branch/scripts/lean-pr-testing-comments.sh batteries
 
+  upload_cache:
+    name: Upload cache${{ inputs.job_name_suffix }}
+    needs: [build]
+    runs-on: ubuntu-latest # These steps run on a GitHub runner; no landrun sandboxing is needed.
+    # We only upload the cache if the build started (whether succeeding, failing, or cancelled)
+    # but not if any earlier step failed or was cancelled.
+    # See discussion at https://leanprover.zulipchat.com/#narrow/stream/287929-mathlib4/topic/Some.20files.20not.20found.20in.20the.20cache/near/407183836
+    if: ${{ always() && needs.build.outputs.build-outcome == 'success' && needs.build.outputs.get-cache-outcome == 'success' }}
+    steps:
+      - name: Checkout master branch
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          ref: ${{ github.repository == 'leanprover-community/mathlib4-nightly-testing' && 'nightly-testing' || 'master' }}
+          fetch-depth: 1
+
+      - name: Configure Lean
+        uses: leanprover/lean-action@c544e89643240c6b398f14a431bcdc6309e36b3e # v1.4.0
+        with:
+          auto-config: false # Don't run `lake build`, `lake test`, or `lake lint` automatically.
+          use-github-cache: false
+          use-mathlib-cache: false # This can be re-enabled once we are confident in the cache again.
+          reinstall-transient-toolchain: true
+
+      - name: build cache executable
+        run: |
+          lake build cache
+
+      - name: Download mathlib4 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: mathlib4_artifact
+          path: pr-artifact
+
+      - name: Upload cache to Azure
+        shell: bash
+        run: |
+          cd pr-artifact/pr-branch
+
+          # Trim trailing whitespace from secrets to prevent issues with accidentally added spaces
+          export MATHLIB_CACHE_SAS="${MATHLIB_CACHE_SAS_RAW%"${MATHLIB_CACHE_SAS_RAW##*[![:space:]]}"}"
+
+          # TODO: this is not doing anything currently, and needs to be integrated with put-unpacked
+          # ./.lake/build/bin/cache commit || true
+          # run this in CI if it gets an incorrect lake hash for existing cache files somehow
+          # ./.lake/build/bin/cache put!
+          # do not try to upload files just downloaded
+
+          echo "Uploading cache to Azure..."
+          MATHLIB_CACHE_USE_CLOUDFLARE=0 ../../.lake/build/bin/cache --repo=${{ github.event.pull_request.head.repo.full_name || github.repository }} put-unpacked
+        env:
+          MATHLIB_CACHE_SAS_RAW: ${{ secrets.MATHLIB_CACHE_SAS }}
+
+      - name: Upload Archive and Counterexamples cache to Azure
+        if: ${{ needs.build.outputs.archive-outcome == 'success' && needs.build.outputs.counterexamples-outcome == 'success' }}
+        shell: bash
+        run: |
+          cd pr-artifact/pr-branch
+
+          # Trim trailing whitespace from secrets to prevent issues with accidentally added spaces
+          export MATHLIB_CACHE_SAS="${MATHLIB_CACHE_SAS_RAW%"${MATHLIB_CACHE_SAS_RAW##*[![:space:]]}"}"
+
+          echo "Uploading Archive and Counterexamples cache to Azure..."
+          MATHLIB_CACHE_USE_CLOUDFLARE=0 ../../.lake/build/bin/cache --repo=${{ github.event.pull_request.head.repo.full_name || github.repository }} put-unpacked Archive.lean
+          MATHLIB_CACHE_USE_CLOUDFLARE=0 ../../.lake/build/bin/cache --repo=${{ github.event.pull_request.head.repo.full_name || github.repository }} put-unpacked Counterexamples.lean
+        env:
+          MATHLIB_CACHE_SAS_RAW: ${{ secrets.MATHLIB_CACHE_SAS }}
+
   post_steps:
     name: Post-Build Step${{ inputs.job_name_suffix }}
-    needs: [build]
+    needs: [build, upload_cache]
     runs-on: ubuntu-latest # Note these steps run on disposable GitHub runners, so no landrun sandboxing is needed.
     steps:
 
@@ -677,6 +704,7 @@ jobs:
 
       # We no longer run `lean4checker` in regular CI, as it is quite expensive for little benefit.
       # Instead we run it in a cron job on master: see `daily.yml`.
+
   style_lint:
     name: Lint style${{ inputs.job_name_suffix }}
     runs-on: ubuntu-latest
