@@ -603,7 +603,7 @@ jobs:
           master-branch/scripts/lean-pr-testing-comments.sh batteries
 
   upload_cache:
-    name: Upload cache${{ inputs.job_name_suffix }}
+    name: Upload to cache
     needs: [build]
     runs-on: ubuntu-latest # These steps run on a GitHub runner; no landrun sandboxing is needed.
     # We only upload the cache if the build started (whether succeeding, failing, or cancelled)
