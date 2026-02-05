@@ -12,6 +12,9 @@ jobs:
   job1:
     runs-on: ml-ephemeral
     steps:
+      - name: Job 1
+        run: echo "job1 on runner ${RUNNER_NAME}"
+
       - name: Checkout master branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -29,13 +32,22 @@ jobs:
         run: |
           lake exe cache get
 
-      - name: Job 1
-        run: echo "job1 on runner ${RUNNER_NAME}"
+      - name: verify that everything was available in the cache
+        run: |
+          echo "::group::{verify Mathlib cache}"
+          lake build --no-build --rehash -v Mathlib
+
+      - name: build Mathlib
+        run: |
+          lake build
 
   job2:
     runs-on: ml-ephemeral
     needs: job1
     steps:
+      - name: Job 2
+        run: echo "job2 on runner ${RUNNER_NAME}"
+
       - name: Checkout master branch
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -53,12 +65,11 @@ jobs:
         run: |
           lake exe cache get
 
-      - name: Job 2
-        run: echo "job2 on runner ${RUNNER_NAME}"
+      - name: build Mathlib
+        run: |
+          lake build
 
-  job3:
-    runs-on: ml-ephemeral
-    needs: job2
-    steps:
-      - name: Job 3
-        run: echo "job3 on runner ${RUNNER_NAME}"
+      - name: verify that everything was available in the cache
+        run: |
+          echo "::group::{verify Mathlib cache}"
+          lake build --no-build --rehash -v Mathlib
