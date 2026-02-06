@@ -939,3 +939,10 @@ lemma DifferentiableAt.comp_ringHom (hf : DifferentiableAt 𝕜 f x) :
   (hf.hasDerivAt.comp_ringHom σ σ').differentiableAt
 
 end Semilinear
+
+section Support
+
+theorem tsupport_deriv_apply_subset : tsupport (deriv f) ⊆ tsupport f :=
+  tsupport_fderiv_apply_subset _ 1
+
+end Support

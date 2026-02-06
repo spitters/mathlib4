@@ -67,7 +67,7 @@ def derivCLM : 𝓢(ℝ, F) →L[𝕜] 𝓢(ℝ, F) :=
         f.le_seminorm' 𝕜 k (n + 1) x⟩
 
 @[simp]
-theorem derivCLM_apply (f : 𝓢(ℝ, F)) (x : ℝ) : derivCLM 𝕜 F f x = deriv f x :=
+theorem derivCLM_apply (f : 𝓢(ℝ, F)) : derivCLM 𝕜 F f = deriv f :=
   rfl
 
 theorem hasDerivAt (f : 𝓢(ℝ, F)) (x : ℝ) : HasDerivAt f (deriv f x) x :=
@@ -178,9 +178,7 @@ variable (𝕜)
 variable [RCLike 𝕜] [NormedSpace 𝕜 F]
 
 theorem tsupport_derivCLM_subset (f : 𝓢(ℝ, F)) : tsupport (derivCLM 𝕜 F f) ⊆ tsupport f := by
-  change tsupport (deriv f ·) ⊆ _
-  simp_rw [← fderiv_apply_one_eq_deriv]
-  exact tsupport_fderiv_apply_subset ℝ 1
+  simp only [derivCLM_apply, tsupport_deriv_apply_subset]
 
 variable [NormedSpace ℝ E] [SMulCommClass ℝ 𝕜 F]
 
