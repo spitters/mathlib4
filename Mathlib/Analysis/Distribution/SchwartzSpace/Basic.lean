@@ -602,6 +602,16 @@ def mkLM (A : 𝓢(D, E) → F → G) (hadd : ∀ (f g : 𝓢(D, E)) (x), A (f +
   map_add' f g := ext (hadd f g)
   map_smul' a f := ext (hsmul a f)
 
+@[simp]
+theorem coe_mkLM (A : 𝓢(D, E) → F → G) (hadd : ∀ (f g : 𝓢(D, E)) (x), A (f + g) x = A f x + A g x)
+    (hsmul : ∀ (a : 𝕜) (f : 𝓢(D, E)) (x), A (a • f) x = σ a • A f x)
+    (hsmooth : ∀ f : 𝓢(D, E), ContDiff ℝ ∞ (A f))
+    (hbound : ∀ n : ℕ × ℕ, ∃ (s : Finset (ℕ × ℕ)) (C : ℝ), 0 ≤ C ∧ ∀ (f : 𝓢(D, E)) (x : F),
+      ‖x‖ ^ n.fst * ‖iteratedFDeriv ℝ n.snd (A f) x‖ ≤ C * s.sup (schwartzSeminormFamily 𝕜 D E) f)
+    (f) :
+    (mkLM A hadd hsmul hsmooth hbound f) = A f :=
+  rfl
+
 /-- Create a continuous semilinear map between Schwartz spaces.
 
 For an example of using this definition, see `fderivCLM`. -/
@@ -621,6 +631,17 @@ def mkCLM [RingHomIsometric σ] (A : 𝓢(D, E) → F → G)
     refine ⟨s, ⟨C, hC⟩, fun f => ?_⟩
     exact (mkLM A hadd hsmul hsmooth hbound f).seminorm_le_bound 𝕜' n.1 n.2 (by positivity) (h f)
   toLinearMap := mkLM A hadd hsmul hsmooth hbound
+
+@[simp]
+theorem coe_mkCLM [RingHomIsometric σ] (A : 𝓢(D, E) → F → G)
+    (hadd : ∀ (f g : 𝓢(D, E)) (x), A (f + g) x = A f x + A g x)
+    (hsmul : ∀ (a : 𝕜) (f : 𝓢(D, E)) (x), A (a • f) x = σ a • A f x)
+    (hsmooth : ∀ f : 𝓢(D, E), ContDiff ℝ ∞ (A f))
+    (hbound : ∀ n : ℕ × ℕ, ∃ (s : Finset (ℕ × ℕ)) (C : ℝ), 0 ≤ C ∧ ∀ (f : 𝓢(D, E)) (x : F),
+      ‖x‖ ^ n.fst * ‖iteratedFDeriv ℝ n.snd (A f) x‖ ≤ C * s.sup (schwartzSeminormFamily 𝕜 D E) f)
+    (f) :
+    (mkCLM A hadd hsmul hsmooth hbound f) = A f :=
+  rfl
 
 /-- Define a continuous semilinear map from Schwartz space to a normed space. -/
 def mkCLMtoNormedSpace [RingHomIsometric σ] (A : 𝓢(D, E) → G)
