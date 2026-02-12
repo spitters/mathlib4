@@ -131,8 +131,8 @@ lemma Ideal.IsMinimalPrimaryDecomposition.minimalPrimes_subset_image_radical
   have htp : t.inf radical ≤ p := by
     rw [← hp.1.1.radical]
     refine le_trans ?_ (radical_mono hp.1.2)
-    rw [← ht.inf_eq, ← radicalInfTopHom_apply, map_finset_inf]
-    rfl
+    rw [← ht.inf_eq, ← radicalInfTopHom_apply, map_finset_inf, Function.comp_id,
+      coe_radicalInfTopHom]
   obtain ⟨q, hqt, hqp⟩ := (IsPrime.inf_le' hp.1.1).mp htp
   exact ⟨q, hqt, le_antisymm hqp (hp.2 ⟨isPrime_radical (ht.primary hqt),
     ht.inf_eq.symm.trans_le ((Finset.inf_le hqt).trans le_radical)⟩ hqp)⟩

@@ -881,6 +881,9 @@ def radicalInfTopHom : InfTopHom (Ideal R) (Ideal R) where
   map_top' := radical_top _
 
 @[simp]
+lemma coe_radicalInfTopHom : ⇑(radicalInfTopHom (R := R)) = radical := rfl
+
+@[simp]
 lemma radicalInfTopHom_apply (I : Ideal R) : radicalInfTopHom I = radical I := rfl
 
 open Finset in
