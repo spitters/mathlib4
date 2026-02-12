@@ -2,7 +2,9 @@
 
 import os
 import re
+import sys
 from collections import defaultdict
+from graphlib import TopologicalSorter
 from typing import Dict, List, Set
 
 def find_lean_files(root_dir: str) -> List[str]:
@@ -50,32 +52,14 @@ def build_dependency_graph(files: List[str]) -> Dict[str, Set[str]]:
 def topological_sort(dependencies: Dict[str, Set[str]]) -> List[str]:
     """Perform topological sort on the dependency graph.
     If A imports B, then B comes before A in the output."""
-    result = []
-    visited = set()
-    temp_mark = set()  # Used in depth-first search to detect cycles
-
-    def visit(node: str):
-        if node in temp_mark:
-            return  # Skip if we hit a cycle
-        if node in visited:
-            return
-
-        temp_mark.add(node)
-        for imp in dependencies.get(node, set()):
-            visit(imp)
-        temp_mark.remove(node)
-        visited.add(node)
-        result.append(node)
-
-    # Visit all nodes
-    nodes = set(dependencies.keys()) | {dep for deps in dependencies.values() for dep in deps}
-    for node in nodes:
-        if node not in visited:
-            visit(node)
-
-    return result
+    return list(TopologicalSorter(dependencies).static_order())
 
 def main():
+    # Read optional list of files from stdin
+    input_files = []
+    if not sys.stdin.isatty():
+        input_files = [line.strip() for line in sys.stdin if line.strip()]
+
     lean_files = find_lean_files('Mathlib')
     if not lean_files:
         return
@@ -85,6 +69,18 @@ def main():
         return
 
     sorted_modules = topological_sort(dependencies)
+
+    if input_files:
+        # Convert file paths to module paths for filtering
+        input_modules = set()
+        for f in input_files:
+            if f.endswith('.lean') and f.startswith('Mathlib/'):
+                module = f.replace('/', '.').replace('\\', '.')[:-5]
+                input_modules.add(module)
+            else:
+                input_modules.add(f)
+        sorted_modules = [m for m in sorted_modules if m in input_modules]
+
     for module in sorted_modules:
         print(module)
 
