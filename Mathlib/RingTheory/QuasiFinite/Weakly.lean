@@ -199,6 +199,7 @@ lemma baseChange (p : Ideal S) [p.IsPrime] [WeaklyQuasiFiniteAt R p]
     (Ideal.quotientKerAlgEquivOfSurjective hφ₁)
   refine .of_surjectiveOnStalks (q.map φ.toRingHom) e.symm.toAlgHom
     e.symm.toRingEquiv.surjectiveOnStalks _ ?_
+  -- TODO Ideal.map
   erw [Ideal.comap_symm] -- This should be fixed once `Ideal.map` does not take homclasses.
   rw [← Ideal.map_coe e.toRingEquiv, Ideal.map_map]
   rfl
