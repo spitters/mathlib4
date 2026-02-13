@@ -87,8 +87,7 @@ def main (args : List String) : IO Unit := do
   CacheM.run do
 
   -- split args and named options
-  let options := args.filter (·.startsWith "--")
-  let args := args.filter (!·.startsWith "--")
+  let (options, args) := args.partition (·.startsWith "--")
 
   -- parse relevant options, ignore the rest
   let repo?        ←  parseNamedOpt "repo"  options
