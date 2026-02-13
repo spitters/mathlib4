@@ -89,6 +89,9 @@ lemma Scheme.isoSpec_inv_toSpecΓ (X : Scheme.{u}) [IsAffine X] :
     X.isoSpec.inv ≫ X.toSpecΓ = 𝟙 _ :=
   X.isoSpec.inv_hom_id
 
+/-- A random change. -/
+def hello : String := "Hello"
+
 /-- Construct an affine scheme from a scheme and the information that it is affine.
 Also see `AffineScheme.of` for a typeclass version. -/
 @[simps]
