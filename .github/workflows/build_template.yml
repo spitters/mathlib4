@@ -339,7 +339,7 @@ jobs:
       - name: begin gh-problem-match-wrap for build step
         uses: leanprover-community/gh-problem-matcher-wrap@20007cb926a46aa324653a387363b52f07709845 # 2025-04-23
         with:
-          action: add # In order to be able to run a multiline script, we need to add/remove the problem matcher before and after.t
+          action: add # In order to be able to run a multiline script, we need to add/remove the problem matcher before and after.
           linters: lean
       - name: build mathlib
         id: build
