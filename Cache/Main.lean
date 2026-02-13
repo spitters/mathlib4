@@ -23,7 +23,8 @@ Commands:
   clean          Delete non-linked files
   clean!         Deleteput-unpacked everything on the local cache
   lookup [ARGS]  Show information about cache files for the given Lean files
-  stage-unpacked Move files not already 'pack'ed to an output directory; intended for CI use
+  stage         Move files not already 'pack'ed to an output directory; intended for CI use
+  stage!        Move all linked cache files to an output directory; intended for CI use
 
   # Privilege required
   put          Run 'pack' then upload linked files missing on the server
@@ -34,7 +35,7 @@ Commands:
 
 Options:
   --repo=OWNER/REPO  Override the repository to fetch/push cache from
-  --staging-dir=<output-directory> Required for 'stage-unpacked' and 'unstage': staging directory.
+  --staging-dir=<output-directory> Required for 'stage', 'stage!' and 'unstage': staging directory.
 
 * Linked files refer to local cache files with corresponding Lean sources
 * Commands ending with '!' should be used manually, when hot-fixes are needed
@@ -69,7 +70,7 @@ def curlArgs : List String :=
 
 /-- Commands which (potentially) call `leantar` for compressing or decompressing files -/
 def leanTarArgs : List String :=
-  ["get", "get!", "put", "put!", "put-unpacked", "pack", "pack!", "unpack", "lookup", "stage-unpacked"]
+  ["get", "get!", "put", "put!", "put-unpacked", "pack", "pack!", "unpack", "lookup", "stage", "stage!"]
 
 /-- Parses an optional `--foo=bar` option. -/
 def parseNamedOpt (opt : String) (args : List String) : IO (Option String) := do
@@ -114,8 +115,8 @@ def main (args : List String) : IO Unit := do
   let put (overwrite unpackedOnly := false) := do
     let repo := repo?.getD MATHLIBREPO
     putFiles repo (← pack overwrite (verbose := true) unpackedOnly) overwrite (← getToken)
-  let stage outDir := do
-    stageFiles outDir (← pack (verbose := true) (unpackedOnly := true))
+  let stage outDir (unpackedOnly := true) := do
+    stageFiles outDir (← pack (verbose := true) (unpackedOnly := unpackedOnly))
   let unstage (overwrite := false) := do
     if stagingDir?.isNone then IO.println "unstage requires --staging-dir=" return else
       unstageFiles stagingDir?.get! overwrite
@@ -143,8 +144,10 @@ def main (args : List String) : IO Unit := do
   | "put" :: _ => put
   | "put!" :: _ => put (overwrite := true)
   | "put-unpacked" :: _ => put (unpackedOnly := true)
-  | "stage-unpacked" :: _ => if (stagingDir?.isNone) then IO.println "stage-unpacked requires --staging-dir=" return else
+  | "stage" :: _ => if (stagingDir?.isNone) then IO.println "stage requires --staging-dir=" return else
     stage stagingDir?.get!
+  | "stage!" :: _ => if (stagingDir?.isNone) then IO.println "stage! requires --staging-dir=" return else
+    stage stagingDir?.get! (unpackedOnly := false)
   | "put-staged" :: _ => if (stagingDir?.isNone) then IO.println "put-staged requires --staging-dir=" return else
     putStaged stagingDir?.get!
   | ["commit"] =>

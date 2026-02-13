@@ -411,21 +411,21 @@ jobs:
         shell: bash
         run: |
           cd pr-branch
-          lake env ../tools-branch/.lake/build/bin/cache --staging-dir="../cache-staging" stage-unpacked
+          lake env ../tools-branch/.lake/build/bin/cache --staging-dir="../cache-staging" stage
 
       - name: stage Archive cache files
         if: ${{ steps.archive.outcome == 'success' }}
         shell: bash
         run: |
           cd pr-branch
-          lake env ../tools-branch/.lake/build/bin/cache --staging-dir="../cache-staging" stage-unpacked Archive.lean
+          lake env ../tools-branch/.lake/build/bin/cache --staging-dir="../cache-staging" stage Archive.lean
 
       - name: stage Counterexamples cache files
         if: ${{ steps.counterexamples.outcome == 'success' }}
         shell: bash
         run: |
           cd pr-branch
-          lake env ../tools-branch/.lake/build/bin/cache --staging-dir="../cache-staging" stage-unpacked Counterexamples.lean
+          lake env ../tools-branch/.lake/build/bin/cache --staging-dir="../cache-staging" stage Counterexamples.lean
 
       - name: check cache staging contents
         id: cache_staging_check
