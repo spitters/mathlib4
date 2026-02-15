@@ -107,13 +107,13 @@ def main (args : List String) : IO Unit := do
     roots := Std.HashMap.emptyWithCapacity.insert mod sourceFile
 
   let hashMemo ← getHashMemo roots
-
+  let hashMap := hashMemo.hashMap
   let goodCurl ← pure !curlArgs.contains (args.headD "") <||> validateCurl
   if leanTarArgs.contains (args.headD "") then validateLeanTar
   let get (force := false) (decompress := true) := do
-    getFiles repo? hashMemo.hashMap force force goodCurl decompress
+    getFiles repo? hashMap force force goodCurl decompress
   let pack (overwrite verbose unpackedOnly := false) := do
-    packCache hashMemo.hashMap overwrite verbose unpackedOnly (← getGitCommitHash)
+    packCache hashMap overwrite verbose unpackedOnly (← getGitCommitHash)
   let put (overwrite unpackedOnly := false) := do
     let repo := repo?.getD MATHLIBREPO
     putFiles repo (← pack overwrite (verbose := true) unpackedOnly) overwrite (← getToken)
@@ -135,12 +135,12 @@ def main (args : List String) : IO Unit := do
   | "get-" :: _ => get (decompress := false)
   | ["pack"] => discard <| pack
   | ["pack!"] => discard <| pack (overwrite := true)
-  | ["unpack"] => unpackCache hashMemo.hashMap false
-  | ["unpack!"] => unpackCache hashMemo.hashMap true
+  | ["unpack"] => unpackCache hashMap false
+  | ["unpack!"] => unpackCache hashMap true
   | ["unstage"] => unstage
   | ["unstage!"] => unstage (overwrite := true)
   | ["clean"] =>
-    cleanCache <| hashMemo.hashMap.fold (fun acc _ hash => acc.insert <| CACHEDIR / hash.asLTar) .empty
+    cleanCache <| hashMap.fold (fun acc _ hash => acc.insert <| CACHEDIR / hash.asLTar) .empty
   | ["clean!"] => cleanCache
   -- We allow arguments for `put*` so they can be added to the `roots`.
   | "put" :: _ => put
@@ -154,10 +154,10 @@ def main (args : List String) : IO Unit := do
     putStaged stagingDir?.get!
   | ["commit"] =>
     if !(← isGitStatusClean) then IO.println "Please commit your changes first" return else
-    commit hashMemo.hashMap false (← getToken)
+    commit hashMap false (← getToken)
   | ["commit!"] =>
     if !(← isGitStatusClean) then IO.println "Please commit your changes first" return else
-    commit hashMemo.hashMap true (← getToken)
+    commit hashMap true (← getToken)
   | ["collect"] => IO.println "TODO"
-  | "lookup" :: _ => lookup hashMemo.hashMap roots.keys
+  | "lookup" :: _ => lookup hashMap roots.keys
   | _ => println help
