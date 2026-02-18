@@ -347,7 +347,7 @@ lemma toLinearMapLieHom_injective : Function.Injective (toLinearMapLieHom R L) :
 
 /-- Lie derivations over a Noetherian Lie algebra form a Noetherian module. -/
 instance instNoetherian [IsNoetherian R L] : IsNoetherian R (LieDerivation R L L) :=
-  isNoetherian_of_linearEquiv _ (LinearEquiv.ofInjective _ (toLinearMapLieHom_injective R L)).symm
+  isNoetherian_of_linearEquiv (LinearEquiv.ofInjective _ (toLinearMapLieHom_injective R L)).symm
 
 end
 

@@ -118,13 +118,13 @@ lemma IsFiniteLength.of_injective (H : IsFiniteLength R N) (hf : Function.Inject
     IsFiniteLength R M := by
   rw [isFiniteLength_iff_isNoetherian_isArtinian] at H ⊢
   cases H
-  exact ⟨isNoetherian_of_injective _ f hf, isArtinian_of_injective f hf⟩
+  exact ⟨isNoetherian_of_injective f hf, isArtinian_of_injective f hf⟩
 
 lemma IsFiniteLength.of_surjective (H : IsFiniteLength R M) (hf : Function.Surjective f) :
     IsFiniteLength R N := by
   rw [isFiniteLength_iff_isNoetherian_isArtinian] at H ⊢
   cases H
-  exact ⟨isNoetherian_of_surjective _ f (LinearMap.range_eq_top.mpr hf),
+  exact ⟨isNoetherian_of_surjective f (LinearMap.range_eq_top.mpr hf),
     isArtinian_of_surjective _ f hf⟩
 
 /- The following instances are now automatic:

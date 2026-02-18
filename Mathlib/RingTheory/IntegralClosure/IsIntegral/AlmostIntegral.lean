@@ -109,7 +109,7 @@ lemma IsAlmostIntegral.isIntegral_of_nonZeroDivisors_le_comap
     exact fun x y e ↦ Subtype.ext (this congr($e))
   have : (Algebra.adjoin R {s}).toSubmodule.FG := by
     rw [← Module.Finite.iff_fg]
-    exact .of_injective _ f this
+    exact .of_injective f this
   exact .of_mem_of_fg _ this _ (Algebra.self_mem_adjoin_singleton R s)
 
 @[stacks 00GX "Part 3"]
