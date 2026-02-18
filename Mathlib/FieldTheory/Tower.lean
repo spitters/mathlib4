@@ -46,7 +46,7 @@ Note this cannot be an instance as Lean cannot infer `A`.
 -/
 theorem left [IsDomain K] [Nontrivial A] : Module.Finite F K :=
   let ⟨x, hx⟩ := exists_ne (0 : A)
-  Module.Finite.of_injective _
+  Module.Finite.of_injective
     (LinearMap.ringLmapEquivSelf K ℕ A |>.symm x |>.restrictScalars F) (smul_left_injective K hx)
 
 variable [Semiring F] [Semiring K] [Module F K]
