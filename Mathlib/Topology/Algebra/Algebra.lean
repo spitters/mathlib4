@@ -182,6 +182,9 @@ initialize_simps_projections ContinuousAlgHom (toFun → apply, toAlgHom → coe
 @[ext]
 theorem ext {f g : A →A[R] B} (h : ∀ x, f x = g x) : f = g := DFunLike.ext f g h
 
+/-- Just hello -/
+def hello : String := "Hello"
+
 /-- Copy of a `ContinuousAlgHom` with a new `toFun` equal to the old one. Useful to fix
 definitional equalities. -/
 def copy (f : A →A[R] B) (f' : A → B) (h : f' = ⇑f) : A →A[R] B where
