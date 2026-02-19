@@ -16,15 +16,14 @@ public import Mathlib.RingTheory.Valuation.Basic
 
 namespace FiniteField
 
-set_option linter.unusedFintypeInType false
-
 open Valuation
 
-variable {Fq A Γ : Type*} [Field Fq] [Fintype Fq] [Ring A] [Algebra Fq A]
+variable {Fq A Γ : Type*} [Field Fq] [Finite Fq] [Ring A] [Algebra Fq A]
   [LinearOrderedCommMonoidWithZero Γ] (v : Valuation A Γ)
 
 @[grind =>]
 lemma valuation_algebraMap_eq_one (a : Fq) (ha : a ≠ 0) : v (algebraMap Fq A a) = 1 := by
+  have : Fintype Fq := Fintype.ofFinite Fq
   have hpow : (v (algebraMap Fq A a)) ^ (Fintype.card Fq - 1) = 1 := by
     simp [← map_pow, FiniteField.pow_card_sub_one_eq_one a ha]
   grind [pow_eq_one_iff, → IsPrimePow.two_le, FiniteField.isPrimePow_card]
