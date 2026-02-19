@@ -424,6 +424,36 @@ lemma ringEquivOfRingEquiv_symm :
 
 end ringEquivOfRingEquiv
 
+section semilinearEquivOfRingEquiv
+
+instance _root_.RingHomInvPair.ofRingEquiv {R S : Type*} [CommSemiring R] [CommSemiring S]
+    (f : R ≃+* S) : RingHomInvPair f.toRingHom f.symm.toRingHom where
+  comp_eq := by simp
+  comp_eq₂ := by simp_all
+
+variable {A B : Type*} (K L : Type*) [CommRing A] [CommRing B] [CommRing K] [CommRing L]
+    [Algebra A K] [IsFractionRing A K] [Algebra B L] [IsFractionRing B L] (f : A ≃+* B)
+
+/-- Given rings `A, B` and localization maps to their fraction rings
+`f : A →+* K, g : B →+* L`, an isomorphism `h : A ≃+* B` induces a semilinear equivalence
+fraction rings `K ≃ₛₗ[f.toRingHom] L`. -/
+noncomputable def semilinearEquivOfRingEquiv : K ≃ₛₗ[f.toRingHom] L :=
+{ ringEquivOfRingEquiv f with
+  map_smul' r x := by simp [Algebra.smul_def] }
+
+lemma semilinearEquivOfRingEquiv_apply (x : K) :
+    (semilinearEquivOfRingEquiv K L f) x = (ringEquivOfRingEquiv f) x := rfl
+
+@[simp]
+lemma semilinearEquivOfRingEquiv_algebraMap (a : A) :
+    semilinearEquivOfRingEquiv K L f (algebraMap A K a) = algebraMap B L (f a) := by
+  simp [semilinearEquivOfRingEquiv, ringEquivOfRingEquiv]
+
+lemma semilinearEquivOfRingEquiv_symm_apply (x : L) :
+    (semilinearEquivOfRingEquiv K L f).symm x = (ringEquivOfRingEquiv f).symm x := rfl
+
+end semilinearEquivOfRingEquiv
+
 section algEquivOfAlgEquiv
 
 variable {R A K B L : Type*} [CommSemiring R] [CommRing A] [CommRing B] [CommRing K] [CommRing L]
