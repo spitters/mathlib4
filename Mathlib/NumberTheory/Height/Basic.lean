@@ -139,6 +139,9 @@ lemma mulHeight₁_ne_zero (x : K) : mulHeight₁ x ≠ 0 :=
 lemma mulHeight₁_nonneg (x : K) : 0 ≤ mulHeight₁ x :=
   (mulHeight₁_pos x).le
 
+-- #35407
+@[deprecated (since := "2026-02-16")] alias zero_le_mulHeight₁ := mulHeight₁_nonneg
+
 /-- The logarithmic height of an element of `K`. -/
 def logHeight₁ (x : K) : ℝ := log (mulHeight₁ x)
 
@@ -332,8 +335,14 @@ lemma mulHeight_pos (x : ι → K) : 0 < mulHeight x :=
 lemma mulHeight_ne_zero (x : ι → K) : mulHeight x ≠ 0 :=
   (mulHeight_pos x).ne'
 
+-- #35407
+@[deprecated (since := "2026-02-16")] alias mulHeight.ne_zero := mulHeight_ne_zero
+
 lemma logHeight_nonneg (x : ι → K) : 0 ≤ logHeight x :=
   log_nonneg <| one_le_mulHeight x
+
+-- #35407
+@[deprecated (since := "2026-02-16")] alias zero_le_logHeight := logHeight_nonneg
 
 end Height
 
