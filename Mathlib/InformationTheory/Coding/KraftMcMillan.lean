@@ -34,6 +34,7 @@ distinct, and the count is bounded by the number of strings of each length.
 
 ## References
 
+TODO ref
 * McMillan, B. (1956), "Two inequalities implied by unique decipherability"
 -/
 
