@@ -421,13 +421,25 @@ def traverse_dag(
                     if succ in remaining_deps:
                         mark_skipped(succ)
             else:
-                # Decrement dep counts for successors
-                for succ in successors_of.get(module_name, []):
-                    if succ in remaining_deps and succ not in skipped:
-                        remaining_deps[succ] -= 1
-                        if remaining_deps[succ] == 0:
-                            ready.append(succ)
+                # Decrement dep counts and collect newly ready modules.
+                # Skip-set modules that become ready are completed inline
+                # (no action) and their successors are cascaded.
+                cascade = [module_name]
+                while cascade:
+                    current = cascade.pop()
+                    for succ in successors_of.get(current, []):
+                        if succ in remaining_deps and succ not in skipped:
+                            remaining_deps[succ] -= 1
+                            if remaining_deps[succ] == 0:
+                                if succ in skip_set:
+                                    fp = resolve(dag.modules[succ].filepath)
+                                    all_results.append(TraversalResult(succ, fp))
+                                    completed_count += 1
+                                    cascade.append(succ)
+                                else:
+                                    ready.append(succ)
 
+            cc = completed_count
             if cc + len(skipped) >= total:
                 done_event.set()
 
