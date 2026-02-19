@@ -519,6 +519,19 @@ theorem iInf_localization_eq_bot [Algebra R K] [hK : IsFractionRing R K] :
   · exact fun hx ⟨v, hv⟩ => hx ((equivMaximalSpectrum hR).symm ⟨v, hv⟩)
   · exact fun hx ⟨v, hv, hbot⟩ => hx ⟨v, hv.isMaximal hbot⟩
 
+theorem RingEquiv.nontrivial_heightOneSpectrum {R S : Type*} [CommRing R] [CommRing S]
+    [hS : Nontrivial (HeightOneSpectrum S)] (e : R ≃+* S) : Nontrivial (HeightOneSpectrum R) := by
+  obtain ⟨P, Q, hpq⟩ := hS
+  have : P.asIdeal.comap e ≠ ⊥ := (Ideal.eq_bot_of_comap_eq_bot' e.surjective).mt P.ne_bot
+  use ⟨P.asIdeal.comap e, P.asIdeal.comap_isPrime e,
+      (Ideal.eq_bot_of_comap_eq_bot' e.surjective ).mt P.ne_bot⟩,
+    ⟨Q.asIdeal.comap e, Q.asIdeal.comap_isPrime e,
+      (Ideal.eq_bot_of_comap_eq_bot' e.surjective).mt Q.ne_bot⟩
+  contrapose! hpq
+  simp only [HeightOneSpectrum.mk.injEq] at hpq
+  replace hpq := congr(Ideal.map e $hpq)
+  simpa [Ideal.map_comap_of_surjective _ (e.surjective), HeightOneSpectrum.ext_iff] using hpq
+
 end HeightOneSpectrum
 
 end IsDedekindDomain
