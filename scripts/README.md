@@ -73,6 +73,47 @@ to learn about it as well!
 
   Other subcommands to automate git-related actions may be added in the future.
 
+**`backward.isDefEq.respectTransparency` migration tools**
+
+These scripts help with testing Lean PRs that change `backward.isDefEq.respectTransparency`
+behaviour. They share a common DAG traversal library that parallelises work in import-graph order.
+
+- `dag_traversal.py`
+  Reusable parallel DAG traversal for Lean import graphs. Parses the import DAG from `.lean`
+  source files and parallelises an action over a forward or backward traversal. Each module is
+  submitted to the thread pool the moment its last in-DAG dependency finishes.
+
+  **Library usage:**
+  ```python
+  from dag_traversal import DAG, traverse_dag
+
+  dag = DAG.from_directories(Path("."))
+  results = traverse_dag(dag, my_action, direction="forward", stop_on_failure=True)
+  ```
+
+  **CLI usage:**
+  ```bash
+  scripts/dag_traversal.py --forward 'lake build {}'       # {} = file path
+  scripts/dag_traversal.py --backward --module 'echo {}'   # {} = module name
+  scripts/dag_traversal.py --forward -j4 'my_script {}'
+  ```
+
+- `add_backward_defeq.py`
+  Adds `set_option backward.isDefEq.respectTransparency false in` before declarations that fail
+  to build. Traverses the DAG **forward** (roots first) so each module is only built after all
+  its imports are clean. For each error, finds the enclosing
+  declaration, inserts the set_option line, and rebuilds to verify.
+  Usage: `python3 scripts/add_backward_defeq.py [--max-workers N] [--timeout N] [--files FILE ...]`
+
+- `remove_backward_defeq.py`
+  Removes unnecessary `set_option backward.isDefEq.respectTransparency false in` lines.
+  Only targets lines without a trailing comment; lines like
+  `set_option backward.isDefEq.respectTransparency false in -- reason` are left untouched.
+  Traverses the DAG **backward** (leaves first) so removing an option from an upstream file
+  doesn't invalidate cached builds of downstream files. Tries removing all occurrences at once;
+  if that fails, falls back to one-at-a-time removal.
+  Usage: `python3 scripts/remove_backward_defeq.py [--dry-run] [--max-workers N] [--files FILE ...]`
+
 **CI workflow**
 - `lake-build-with-retry.sh`
   Runs `lake build` on a target until `lake build --no-build` succeeds. Used in the main build workflows.
