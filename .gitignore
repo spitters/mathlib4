@@ -4,3 +4,5 @@
 .cache
 # `lake` stores its files here:
 .lake
+# Python bytecode cache from scripts/
+scripts/__pycache__/

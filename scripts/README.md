@@ -73,6 +73,13 @@ to learn about it as well!
 
   Other subcommands to automate git-related actions may be added in the future.
 
+**Analyzing Mathlib's import structure**
+- `topological_sort.py`
+  Prints Mathlib modules in topological (import-DAG) order. By default leaves come last
+  (roots first); use `--reverse` for leaves first. If filenames or module names are
+  provided on stdin, outputs only those modules in topological order.
+  Usage: `python3 scripts/topological_sort.py [--reverse]`
+
 **`backward.isDefEq.respectTransparency` migration tools**
 
 These scripts help with testing Lean PRs that change `backward.isDefEq.respectTransparency`
