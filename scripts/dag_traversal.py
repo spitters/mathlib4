@@ -21,6 +21,7 @@ Library usage:
 
 import argparse
 import atexit
+import heapq
 import os
 import re
 import shlex
@@ -306,6 +307,48 @@ class DAG:
         return levels
 
 
+def _compute_depths(successors_of: dict[str, list[str]]) -> dict[str, int]:
+    """Compute the longest successor-chain length for each module.
+
+    depth[m] = 0 if m has no successors in the graph, else
+    1 + max(depth[s] for s in successors_of[m]).
+
+    Used to prioritise modules whose completion unblocks deeper
+    chains of work, improving overall parallelism.
+
+    Nodes involved in cycles (which shouldn't exist in a well-formed
+    import graph) are assigned depth 0.
+    """
+    depths: dict[str, int] = {}
+    visiting: set[str] = set()  # cycle detection
+
+    for start in successors_of:
+        if start in depths:
+            continue
+        # Iterative post-order DFS
+        stack: list[tuple[str, bool]] = [(start, False)]
+        while stack:
+            node, processed = stack.pop()
+            if processed:
+                visiting.discard(node)
+                succs = [s for s in successors_of.get(node, []) if s in depths]
+                depths[node] = (1 + max(depths[s] for s in succs)) if succs else 0
+                continue
+            if node in depths:
+                continue
+            if node in visiting:
+                # Cycle — assign depth 0 and don't recurse further.
+                depths[node] = 0
+                continue
+            visiting.add(node)
+            stack.append((node, True))
+            for s in successors_of.get(node, []):
+                if s not in depths and s in successors_of:
+                    stack.append((s, False))
+
+    return depths
+
+
 def traverse_dag(
     dag: DAG,
     action: Callable[[str, Path], object],
@@ -318,15 +361,17 @@ def traverse_dag(
 ) -> list[TraversalResult]:
     """Process modules in DAG order with maximum parallelism.
 
-    Each module is submitted to the thread pool the instant all its
-    in-DAG dependencies have finished.
+    When more modules are ready than workers available, modules with
+    longer successor chains are scheduled first (critical-path
+    priority), ensuring that work which unblocks the most future
+    parallelism runs earliest.
 
     Args:
         dag: The DAG to traverse.
         action: Callable(module_name, filepath) -> result.  Raise to signal
                 failure.
         direction: "backward" (downstream first) or "forward" (upstream first).
-        max_workers: Thread pool size (default: 2 * cpu_count).
+        max_workers: Thread pool size (default: cpu_count).
         module_callback: Called after each module as (module_name, result, error).
         progress_callback: Called after each module as (completed, total).
         stop_on_failure: If True, when a module fails (action raises), its
@@ -366,11 +411,15 @@ def traverse_dag(
         raise ValueError(f"Unknown direction: {direction!r}")
 
     if max_workers is None:
-        max_workers = (os.cpu_count() or 4) * 2
+        max_workers = os.cpu_count() or 4
 
     total = len(dag.modules)
     if total == 0:
         return []
+
+    # Pre-compute critical-path depths so we can prioritise modules
+    # that unblock the longest chains of future work.
+    depths = _compute_depths(successors_of)
 
     lock = Lock()
     done_event = Event()
@@ -379,7 +428,12 @@ def traverse_dag(
     }
     all_results: list[TraversalResult] = []
     completed_count = 0
+    inflight = 0
     skipped: set[str] = set()
+
+    # Priority queue of ready modules: (-depth, name).  Negative depth
+    # gives us a max-heap so deeper chains are scheduled first.
+    ready_queue: list[tuple[int, str]] = []
 
     def resolve(rel: Path) -> Path:
         if dag.project_root:
@@ -395,8 +449,35 @@ def traverse_dag(
             if succ in remaining_deps:
                 mark_skipped(succ)
 
+    def _drain_ready() -> list[str]:
+        """Pop modules from the priority queue up to available workers.
+
+        Must be called with *lock* held.  Returns the names to submit
+        (submission itself happens outside the lock).
+        """
+        nonlocal inflight
+        to_submit: list[str] = []
+        while ready_queue and inflight < max_workers:
+            _, name = heapq.heappop(ready_queue)
+            inflight += 1
+            to_submit.append(name)
+        return to_submit
+
+    def _do_submit(name: str):
+        nonlocal inflight
+        info = dag.modules[name]
+        try:
+            fut = executor.submit(action, name, resolve(info.filepath))
+        except RuntimeError:
+            # Executor shut down (e.g. KeyboardInterrupt race) — give back
+            # the inflight slot so the scheduler doesn't deadlock.
+            with lock:
+                inflight -= 1
+            return
+        fut.add_done_callback(lambda f, n=name: on_done(f, n))
+
     def on_done(future: Future, module_name: str):
-        nonlocal completed_count
+        nonlocal completed_count, inflight
 
         filepath = resolve(dag.modules[module_name].filepath)
         try:
@@ -407,11 +488,10 @@ def traverse_dag(
 
         failed = tr.error is not None
 
-        ready: list[str] = []
         with lock:
             all_results.append(tr)
             completed_count += 1
-            cc = completed_count
+            inflight -= 1
 
             if stop_on_failure and failed:
                 # Don't unlock successors — mark them as skipped
@@ -435,25 +515,25 @@ def traverse_dag(
                                     completed_count += 1
                                     cascade.append(succ)
                                 else:
-                                    ready.append(succ)
+                                    heapq.heappush(
+                                        ready_queue,
+                                        (-depths.get(succ, 0), succ),
+                                    )
 
             cc = completed_count
-            if cc + len(skipped) >= total:
+            sc = len(skipped)
+            to_submit = _drain_ready()
+
+            if cc + sc >= total:
                 done_event.set()
 
         if module_callback:
             module_callback(module_name, tr.result, tr.error)
         if progress_callback:
-            progress_callback(cc, total - len(skipped))
+            progress_callback(cc, total - sc)
 
-        # Submit newly ready modules
-        for name in ready:
-            submit(name)
-
-    def submit(name: str):
-        info = dag.modules[name]
-        fut = executor.submit(action, name, resolve(info.filepath))
-        fut.add_done_callback(lambda f, n=name: on_done(f, n))
+        for name in to_submit:
+            _do_submit(name)
 
     # Process skip modules before starting the executor.  We iterate in
     # topological order (BFS from zero-dep seeds) so that each skipped
@@ -480,7 +560,7 @@ def traverse_dag(
 
     executor = ThreadPoolExecutor(max_workers=max_workers)
     try:
-        # Seed with all modules that have zero deps (excluding already-skipped)
+        # Seed the priority queue with all zero-dep modules.
         seeds = [
             name for name, count in remaining_deps.items()
             if count == 0 and name not in skip_set
@@ -492,8 +572,14 @@ def traverse_dag(
             )
         if not seeds:
             done_event.set()
-        for name in seeds:
-            submit(name)
+
+        with lock:
+            for name in seeds:
+                heapq.heappush(ready_queue, (-depths.get(name, 0), name))
+            to_submit = _drain_ready()
+
+        for name in to_submit:
+            _do_submit(name)
 
         # Wait until all modules are processed or skipped.
         # We cannot use executor.shutdown(wait=True) here because on_done
@@ -655,7 +741,7 @@ def _cli_main():
         "--max-workers",
         type=int,
         default=None,
-        help="Max parallel workers (default: 2 * cpu count)",
+        help="Max parallel workers (default: cpu count)",
     )
     parser.add_argument(
         "--dir",

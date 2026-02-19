@@ -311,7 +311,7 @@ def main():
         "--max-workers",
         type=int,
         default=None,
-        help="Max parallel workers (default: 2 * cpu_count)",
+        help="Max parallel workers (default: cpu_count)",
     )
     parser.add_argument(
         "--timeout",
