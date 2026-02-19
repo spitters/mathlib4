@@ -414,6 +414,9 @@ def toEnd : (G →+c[a, a] G) →* Function.End G where
   map_mul' _ _ := rfl
   map_one' := rfl
 
+/-- perturbing the cache. -/
+def hello : String := "Hello"
+
 end Add
 
 section AddZeroClass
