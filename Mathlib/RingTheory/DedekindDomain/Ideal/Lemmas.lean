@@ -1066,3 +1066,29 @@ theorem one_le_primesOver_ncard : 1 ≤ (primesOver p B).ncard :=
   Nat.one_le_iff_ne_zero.mpr (primesOver_ncard_ne_zero p B)
 
 end primesOverFinset
+
+open IsDedekindDomain
+
+lemma Algebra.IsIntegral.nontrivial_heightOneSpectrum [IsDedekindDomain R] [Algebra R A]
+    [Module.IsTorsionFree R A] [FaithfulSMul R A] [Algebra.IsIntegral R A]
+    [h : Nontrivial (HeightOneSpectrum R)] : Nontrivial (HeightOneSpectrum A) := by
+  have : Nontrivial A := Function.Injective.nontrivial (FaithfulSMul.algebraMap_injective R A)
+  obtain ⟨P, Q, h⟩ := h
+  have hP : P.asIdeal.IsMaximal := P.isMaximal
+  have hQ : Q.asIdeal.IsMaximal := Q.isMaximal
+  have ⟨P', hP'_max, hPP'⟩ := Ideal.exists_maximal_ideal_liesOver_of_isIntegral P.asIdeal (S := A)
+  have ⟨Q', hQ'_max, hQQ'⟩ := Ideal.exists_maximal_ideal_liesOver_of_isIntegral Q.asIdeal (S := A)
+  have hne : P' ≠ Q' := by
+    intro heq
+    rw [← heq] at hQQ'
+    simp only [Ideal.liesOver_iff] at hPP' hQQ'
+    simp only [← hQQ', ← HeightOneSpectrum.ext_iff, h] at hPP'
+  have hP' : P' ≠ ⊥ := by
+    intro h
+    simp only [h, Ideal.liesOver_iff, Ideal.under_bot (A := R)] at hPP'
+    exact P.ne_bot hPP'
+  have hQ' : Q' ≠ ⊥ := by
+    intro h
+    simp only [h, Ideal.liesOver_iff, Ideal.under_bot (A := R)] at hQQ'
+    exact Q.ne_bot hQQ'
+  exact ⟨ ⟨P', hP'_max.isPrime, hP'⟩, ⟨Q', hQ'_max.isPrime, hQ'⟩, by simp [hne]⟩
