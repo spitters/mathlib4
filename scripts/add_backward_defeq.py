@@ -50,6 +50,7 @@ class _AddDisplay(Display):
     def _status_line(self) -> str:
         return (
             f"[{self.completed}/{self.total}]  "
+            f"Working on: {self.inflight}  "
             f"Fixed: {self.total_fixed}  Failed: {self.total_failed}"
         )
 

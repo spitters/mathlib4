@@ -355,7 +355,7 @@ def traverse_dag(
     direction: str = "backward",
     max_workers: int | None = None,
     module_callback: Callable[[str, object, Exception | None], None] | None = None,
-    progress_callback: Callable[[int, int], None] | None = None,
+    progress_callback: Callable[[int, int, int], None] | None = None,
     stop_on_failure: bool = False,
     skip: set[str] | None = None,
 ) -> list[TraversalResult]:
@@ -373,7 +373,7 @@ def traverse_dag(
         direction: "backward" (downstream first) or "forward" (upstream first).
         max_workers: Thread pool size (default: cpu_count).
         module_callback: Called after each module as (module_name, result, error).
-        progress_callback: Called after each module as (completed, total).
+        progress_callback: Called after each module as (completed, total, inflight).
         stop_on_failure: If True, when a module fails (action raises), its
                          successors in the DAG are skipped.
         skip: Set of module names to mark as completed without running the
@@ -523,6 +523,7 @@ def traverse_dag(
             cc = completed_count
             sc = len(skipped)
             to_submit = _drain_ready()
+            ic = inflight
 
             if cc + sc >= total:
                 done_event.set()
@@ -530,7 +531,7 @@ def traverse_dag(
         if module_callback:
             module_callback(module_name, tr.result, tr.error)
         if progress_callback:
-            progress_callback(cc, total - sc)
+            progress_callback(cc, total - sc, ic)
 
         for name in to_submit:
             _do_submit(name)
@@ -626,6 +627,7 @@ class Display:
         self.lock = Lock()
         self.completed = 0
         self.total = 0
+        self.inflight = 0
         self.messages: list[str] = []
         self.displayed_lines = 0
         self.started = False
@@ -642,7 +644,7 @@ class Display:
             self.started = False
 
     def _status_line(self) -> str:
-        return f"[{self.completed}/{self.total}]"
+        return f"[{self.completed}/{self.total}]  Working on: {self.inflight}"
 
     def _redraw(self):
         if not self.started:
@@ -656,10 +658,11 @@ class Display:
         print(CLEAR_LINE + self._status_line(), flush=True)
         self.displayed_lines = 1
 
-    def on_progress(self, completed: int, total: int):
+    def on_progress(self, completed: int, total: int, inflight: int):
         with self.lock:
             self.completed = completed
             self.total = total
+            self.inflight = inflight
             self._redraw()
 
 
@@ -682,7 +685,10 @@ class _CliDisplay(Display):
             self.started = False
 
     def _status_line(self) -> str:
-        return f"[{self.completed}/{self.total}]  ok: {self.ok}  fail: {self.fail}"
+        return (
+            f"[{self.completed}/{self.total}]  "
+            f"Working on: {self.inflight}  ok: {self.ok}  fail: {self.fail}"
+        )
 
     def on_module(self, module_name: str, result, error: Exception | None):
         with self.lock:

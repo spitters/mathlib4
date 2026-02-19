@@ -75,6 +75,7 @@ class _RemoveDisplay(Display):
     def _status_line(self) -> str:
         return (
             f"[{self.completed}/{self.total}]  "
+            f"Working on: {self.inflight}  "
             f"Removed: {self.total_removed}  Kept: {self.total_kept}"
         )
 
