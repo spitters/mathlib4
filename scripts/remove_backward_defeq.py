@@ -8,18 +8,15 @@ whether the file still builds. Processes files in reverse import-DAG order
 """
 
 import argparse
-import json
 import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock
+from typing import Callable
 
 from dag_traversal import (
-    CLEAR_LINE,
     DAG,
-    HIDE_CURSOR,
-    SHOW_CURSOR,
+    Display,
     force_exit,
     inflight_register,
     inflight_unregister,
@@ -67,52 +64,19 @@ class Summary:
     duration: float = 0.0
 
 
-class Display:
-    """ANSI progress display."""
+class _RemoveDisplay(Display):
+    """Progress display for the remove script."""
 
     def __init__(self):
-        self.lock = Lock()
-        self.completed = 0
-        self.total = 0
+        super().__init__()
         self.total_removed = 0
         self.total_kept = 0
-        self.messages: list[str] = []
-        self.displayed_lines = 0
-        self.started = False
 
-    def start(self, total: int):
-        self.total = total
-        self.started = True
-        print(HIDE_CURSOR, end="", flush=True)
-        self._redraw()
-
-    def stop(self):
-        if self.started:
-            print(SHOW_CURSOR, end="", flush=True)
-            self.started = False
-
-    def _redraw(self):
-        if not self.started:
-            return
-        if self.displayed_lines > 0:
-            print(f"\033[{self.displayed_lines}A", end="")
-        for msg in self.messages:
-            print(CLEAR_LINE + msg)
-        self.messages.clear()
-
-        lines = [
-            CLEAR_LINE
-            + f"[{self.completed}/{self.total}]  "
-            + f"Removed: {self.total_removed}  Kept: {self.total_kept}",
-        ]
-        print("\n".join(lines), flush=True)
-        self.displayed_lines = len(lines)
-
-    def on_progress(self, completed: int, total: int):
-        with self.lock:
-            self.completed = completed
-            self.total = total
-            self._redraw()
+    def _status_line(self) -> str:
+        return (
+            f"[{self.completed}/{self.total}]  "
+            f"Removed: {self.total_removed}  Kept: {self.total_kept}"
+        )
 
     def on_module(self, module_name: str, result: FileResult | None, error: Exception | None):
         with self.lock:
@@ -120,11 +84,11 @@ class Display:
                 self.total_removed += result.removed
                 self.total_kept += result.kept
                 if result.removed > 0 and result.kept == 0:
-                    sym = "✓"
+                    sym = "\u2713"
                 elif result.removed > 0:
                     sym = "~"
                 else:
-                    sym = "·"
+                    sym = "\u00b7"
                 parts = []
                 if result.removed:
                     parts.append(f"-{result.removed}")
@@ -188,7 +152,7 @@ def count_skipped(filepath: Path) -> int:
 def make_process_file(
     removable_map: dict[str, list[int]],
     timeout: int,
-) -> callable:
+) -> Callable:
     """Create the per-file action callback."""
 
     def process_file(module_name: str, filepath: Path) -> FileResult:
@@ -293,12 +257,6 @@ def main():
         nargs="*",
         help="Only process these files (paths relative to project root)",
     )
-    parser.add_argument(
-        "--report-file",
-        type=str,
-        default=None,
-        help="Write JSON report to this file",
-    )
     args = parser.parse_args()
 
     start_time = time.time()
@@ -351,7 +309,7 @@ def main():
         print("(dry run — no changes made)")
         return
 
-    display = Display()
+    display = _RemoveDisplay()
     action = make_process_file(removable_map, args.timeout)
 
     display.start(len(full_dag.modules))
@@ -375,13 +333,11 @@ def main():
     # Step 5: summarize (only count target modules, not skipped ones)
     target_results = [tr for tr in results if tr.module_name in target_modules]
     summary = Summary(total_files=len(target_results), duration=time.time() - start_time)
-    all_file_results: dict[str, dict] = {}
 
     for tr in target_results:
         r: FileResult | None = tr.result
         if tr.error:
             summary.files_errored += 1
-            all_file_results[tr.module_name] = {"error": str(tr.error)}
             continue
         if r is None:
             continue
@@ -394,33 +350,8 @@ def main():
             summary.files_partially_cleaned += 1
         else:
             summary.files_unchanged += 1
-        all_file_results[tr.module_name] = {
-            "removable": r.removable,
-            "removed": r.removed,
-            "kept": r.kept,
-            "skipped": r.skipped,
-        }
 
     print_summary(summary)
-
-    if args.report_file:
-        report = {
-            "summary": {
-                "total_files": summary.total_files,
-                "files_fully_cleaned": summary.files_fully_cleaned,
-                "files_partially_cleaned": summary.files_partially_cleaned,
-                "files_unchanged": summary.files_unchanged,
-                "files_errored": summary.files_errored,
-                "total_removed": summary.total_removed,
-                "total_kept": summary.total_kept,
-                "total_skipped": summary.total_skipped,
-                "duration_seconds": summary.duration,
-            },
-            "files": all_file_results,
-        }
-        with open(args.report_file, "w") as f:
-            json.dump(report, f, indent=2)
-        print(f"\nReport written to {args.report_file}")
 
 
 if __name__ == "__main__":

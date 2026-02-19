@@ -7,20 +7,17 @@ built after all its imports are clean.  No "discovery" builds needed.
 """
 
 import argparse
-import json
 import re
 import subprocess
 import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from threading import Lock
+from typing import Callable
 
 from dag_traversal import (
-    CLEAR_LINE,
     DAG,
-    HIDE_CURSOR,
-    SHOW_CURSOR,
+    Display,
     TraversalResult,
     force_exit,
     inflight_register,
@@ -42,52 +39,19 @@ class FileResult:
     already_present: int = 0
 
 
-class Display:
-    """ANSI progress display."""
+class _AddDisplay(Display):
+    """Progress display for the add script."""
 
     def __init__(self):
-        self.lock = Lock()
-        self.completed = 0
-        self.total = 0
+        super().__init__()
         self.total_fixed = 0
         self.total_failed = 0
-        self.messages: list[str] = []
-        self.displayed_lines = 0
-        self.started = False
 
-    def start(self, total: int):
-        self.total = total
-        self.started = True
-        print(HIDE_CURSOR, end="", flush=True)
-        self._redraw()
-
-    def stop(self):
-        if self.started:
-            print(SHOW_CURSOR, end="", flush=True)
-            self.started = False
-
-    def _redraw(self):
-        if not self.started:
-            return
-        if self.displayed_lines > 0:
-            print(f"\033[{self.displayed_lines}A", end="")
-        for msg in self.messages:
-            print(CLEAR_LINE + msg)
-        self.messages.clear()
-
-        lines = [
-            CLEAR_LINE
-            + f"[{self.completed}/{self.total}]  "
-            + f"Fixed: {self.total_fixed}  Failed: {self.total_failed}",
-        ]
-        print("\n".join(lines), flush=True)
-        self.displayed_lines = len(lines)
-
-    def on_progress(self, completed: int, total: int):
-        with self.lock:
-            self.completed = completed
-            self.total = total
-            self._redraw()
+    def _status_line(self) -> str:
+        return (
+            f"[{self.completed}/{self.total}]  "
+            f"Fixed: {self.total_fixed}  Failed: {self.total_failed}"
+        )
 
     def on_module(self, module_name: str, result: FileResult | None, error: Exception | None):
         with self.lock:
@@ -127,6 +91,11 @@ def find_declaration_start(lines: list[str], error_line: int) -> int:
 
     Walks backwards from error_line (1-indexed) to the first blank line
     that isn't inside a block comment.
+
+    TODO: This heuristic is imperfect — it can misidentify the declaration
+    boundary when there's no blank line between consecutive declarations,
+    or when multi-line attributes bridge two declarations. Ideas for a
+    better rule welcome.
     """
     idx = error_line - 1  # convert to 0-indexed
 
@@ -205,7 +174,7 @@ class UnfixableError(Exception):
         super().__init__(msg)
 
 
-def make_process_module(timeout: int) -> callable:
+def make_process_module(timeout: int) -> Callable:
     """Create the per-module action callback."""
 
     def process_module(module_name: str, filepath: Path) -> FileResult:
@@ -356,12 +325,6 @@ def main():
         help="Only process these files (paths relative to project root)",
     )
     parser.add_argument(
-        "--report-file",
-        type=str,
-        default=None,
-        help="Write JSON report to this file",
-    )
-    parser.add_argument(
         "--no-initial",
         action="store_true",
         help="Skip the initial build (build every module individually)",
@@ -397,7 +360,7 @@ def main():
         print(f"  {len(cone)} modules in forward cone, skipping {len(skip)}")
 
     # Traverse forward
-    display = Display()
+    display = _AddDisplay()
     action = make_process_module(args.timeout)
 
     display.start(len(dag.modules))
@@ -421,26 +384,6 @@ def main():
 
     duration = time.time() - start_time
     print_summary(results, dag, duration)
-
-    if args.report_file:
-        file_results: dict[str, dict] = {}
-        for tr in results:
-            if tr.error:
-                file_results[tr.module_name] = {"error": str(tr.error)}
-            elif tr.result:
-                file_results[tr.module_name] = {
-                    "fixed": tr.result.fixed,
-                    "already_present": tr.result.already_present,
-                }
-        report = {
-            "duration_seconds": duration,
-            "modules_processed": len(results),
-            "modules_skipped": len(dag.modules) - len(results),
-            "files": file_results,
-        }
-        with open(args.report_file, "w") as f:
-            json.dump(report, f, indent=2)
-        print(f"\nReport written to {args.report_file}")
 
     failed = any(tr.error for tr in results)
     sys.exit(1 if failed else 0)

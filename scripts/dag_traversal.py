@@ -32,9 +32,7 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event, Lock
-from typing import Callable, Generic, TypeVar
-
-T = TypeVar("T")
+from typing import Callable
 
 # Set by traverse_dag on KeyboardInterrupt.  Action callbacks can check this
 # to bail out early instead of spawning new subprocesses.
@@ -168,12 +166,12 @@ class ModuleInfo:
 
 
 @dataclass
-class TraversalResult(Generic[T]):
+class TraversalResult:
     """Result of processing a single module."""
 
     module_name: str
     filepath: Path
-    result: T | None = None
+    result: object = None
     error: Exception | None = None
 
 
@@ -310,14 +308,14 @@ class DAG:
 
 def traverse_dag(
     dag: DAG,
-    action: Callable[[str, Path], T],
+    action: Callable[[str, Path], object],
     direction: str = "backward",
     max_workers: int | None = None,
-    module_callback: Callable[[str, T | None, Exception | None], None] | None = None,
+    module_callback: Callable[[str, object, Exception | None], None] | None = None,
     progress_callback: Callable[[int, int], None] | None = None,
     stop_on_failure: bool = False,
     skip: set[str] | None = None,
-) -> list[TraversalResult[T]]:
+) -> list[TraversalResult]:
     """Process modules in DAG order with maximum parallelism.
 
     Each module is submitted to the thread pool the instant all its
@@ -379,7 +377,7 @@ def traverse_dag(
     remaining_deps: dict[str, int] = {
         name: len(deps_of[name]) for name in dag.modules
     }
-    all_results: list[TraversalResult[T]] = []
+    all_results: list[TraversalResult] = []
     completed_count = 0
     skipped: set[str] = set()
 
@@ -531,15 +529,17 @@ def traverse_dag(
 # ---------------------------------------------------------------------------
 
 
-class _CliDisplay:
-    """ANSI progress display for CLI mode."""
+class Display:
+    """ANSI progress display for DAG traversal.
+
+    Subclass and override ``_status_line`` (and add an ``on_module``
+    callback) to customise for a specific script.
+    """
 
     def __init__(self):
         self.lock = Lock()
         self.completed = 0
         self.total = 0
-        self.ok = 0
-        self.fail = 0
         self.messages: list[str] = []
         self.displayed_lines = 0
         self.started = False
@@ -552,14 +552,11 @@ class _CliDisplay:
 
     def stop(self):
         if self.started:
-            # Clear the status line
-            if self.displayed_lines > 0:
-                print(f"\033[{self.displayed_lines}A", end="")
-                for _ in range(self.displayed_lines):
-                    print(CLEAR_LINE)
-                print(f"\033[{self.displayed_lines}A", end="", flush=True)
             print(SHOW_CURSOR, end="", flush=True)
             self.started = False
+
+    def _status_line(self) -> str:
+        return f"[{self.completed}/{self.total}]"
 
     def _redraw(self):
         if not self.started:
@@ -570,11 +567,7 @@ class _CliDisplay:
             print(CLEAR_LINE + msg)
         self.messages.clear()
 
-        line = (
-            CLEAR_LINE
-            + f"[{self.completed}/{self.total}]  ok: {self.ok}  fail: {self.fail}"
-        )
-        print(line, flush=True)
+        print(CLEAR_LINE + self._status_line(), flush=True)
         self.displayed_lines = 1
 
     def on_progress(self, completed: int, total: int):
@@ -582,6 +575,28 @@ class _CliDisplay:
             self.completed = completed
             self.total = total
             self._redraw()
+
+
+class _CliDisplay(Display):
+    """Display subclass for the CLI that clears lines on stop."""
+
+    def __init__(self):
+        super().__init__()
+        self.ok = 0
+        self.fail = 0
+
+    def stop(self):
+        if self.started:
+            if self.displayed_lines > 0:
+                print(f"\033[{self.displayed_lines}A", end="")
+                for _ in range(self.displayed_lines):
+                    print(CLEAR_LINE)
+                print(f"\033[{self.displayed_lines}A", end="", flush=True)
+            print(SHOW_CURSOR, end="", flush=True)
+            self.started = False
+
+    def _status_line(self) -> str:
+        return f"[{self.completed}/{self.total}]  ok: {self.ok}  fail: {self.fail}"
 
     def on_module(self, module_name: str, result, error: Exception | None):
         with self.lock:
