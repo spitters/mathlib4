@@ -9,6 +9,7 @@ whether the file still builds. Processes files in reverse import-DAG order
 
 import argparse
 import re
+import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -149,6 +150,32 @@ def count_skipped(filepath: Path) -> int:
     return count
 
 
+PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]")
+
+
+def initial_build():
+    """Run a full lake build so all .oleans are fresh.
+
+    Without this, every worker would redundantly rebuild shared
+    upstream modules.
+    """
+    print("Running initial build...", flush=True)
+    proc = subprocess.Popen(
+        ["lake", "build"],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        cwd=PROJECT_DIR,
+    )
+    for line in proc.stdout:
+        m = PROGRESS_RE.search(line)
+        if m:
+            print(f"\r  [{m.group(1)}/{m.group(2)}]", end="", flush=True)
+    proc.wait()
+    print()  # newline after progress
+    if proc.returncode != 0:
+        print("  (initial build had errors — continuing anyway)")
+
 
 def make_process_file(
     removable_map: dict[str, list[int]],
@@ -258,6 +285,11 @@ def main():
         nargs="*",
         help="Only process these files (paths relative to project root)",
     )
+    parser.add_argument(
+        "--no-initial",
+        action="store_true",
+        help="Skip the initial lake build (assumes .oleans are already fresh)",
+    )
     args = parser.parse_args()
 
     start_time = time.time()
@@ -290,7 +322,11 @@ def main():
         print("Nothing to do.")
         return
 
-    # Step 4: traverse full DAG, skipping modules without removable lines.
+    # Step 4: initial build to ensure all .oleans are fresh
+    if not args.dry_run and not args.no_initial:
+        initial_build()
+
+    # Step 5: traverse full DAG, skipping modules without removable lines.
     # We use the full DAG (not a subset) to ensure the backward traversal
     # respects all import edges.  Without this, two modules in the target
     # set that are connected through intermediate non-target modules could
@@ -331,7 +367,7 @@ def main():
     finally:
         display.stop()
 
-    # Step 5: summarize (only count target modules, not skipped ones)
+    # Step 6: summarize (only count target modules, not skipped ones)
     target_results = [tr for tr in results if tr.module_name in target_modules]
     summary = Summary(total_files=len(target_results), duration=time.time() - start_time)
 
