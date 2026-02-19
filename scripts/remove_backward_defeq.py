@@ -125,9 +125,14 @@ class Display:
                     sym = "~"
                 else:
                     sym = "·"
-                detail = f"-{result.removed}" if result.removed else ""
+                parts = []
+                if result.removed:
+                    parts.append(f"-{result.removed}")
                 if result.kept:
-                    detail += f" kept {result.kept}"
+                    parts.append(f"kept {result.kept}")
+                if result.skipped:
+                    parts.append(f"skipped {result.skipped}")
+                detail = " ".join(parts)
                 self.messages.append(f"  {sym} {module_name} {detail}")
             elif error:
                 self.messages.append(f"  ! {module_name}: {error}")
