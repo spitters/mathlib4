@@ -228,14 +228,24 @@ def make_process_module(
             _last = list(combo)
 
     def options_present_at(lines: list[str], decl_start: int) -> set[str]:
-        """Return which managed options already appear at/before decl_start."""
+        """Return which managed options already appear at decl_start onward.
+
+        Scans forward from decl_start through consecutive set_option lines
+        (which precede the actual declaration keyword).
+        """
         present: set[str] = set()
-        # Scan decl_start and preceding lines for consecutive set_option lines
-        for idx in range(decl_start, max(decl_start - len(options) - 1, -1), -1):
+        idx = decl_start
+        while idx < len(lines):
+            found = False
             for opt in options:
                 needle = set_option_line(opt).strip()
                 if needle in lines[idx]:
                     present.add(opt)
+                    found = True
+                    break
+            if not found:
+                break
+            idx += 1
         return present
 
     def candidates(missing: list[str]) -> list[list[str]]:
