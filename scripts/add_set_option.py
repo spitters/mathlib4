@@ -42,13 +42,24 @@ class FileResult:
     already_present: int = 0
 
 
+def _opener_cmd() -> str:
+    """Return the platform-appropriate file-open command."""
+    system = platform.system()
+    if system == "Darwin":
+        return "open"
+    elif system == "Windows":
+        return "start"
+    return "xdg-open"
+
+
 class _AddDisplay(Display):
     """Progress display for the add script."""
 
-    def __init__(self):
+    def __init__(self, open_on_failure: bool = False):
         super().__init__()
         self.total_fixed = 0
         self.total_failed = 0
+        self.open_on_failure = open_on_failure
 
     def _status_line(self) -> str:
         return (
@@ -72,6 +83,9 @@ class _AddDisplay(Display):
             elif error:
                 self.total_failed += 1
                 self.messages.append(f"  ! {module_name}: {error}")
+                if self.open_on_failure:
+                    filepath = module_name.replace(".", "/") + ".lean"
+                    subprocess.Popen([_opener_cmd(), filepath], cwd=PROJECT_DIR)
             self._redraw()
 
 
@@ -440,7 +454,7 @@ def main():
                 weights[name] = len(fp.read_text().splitlines()) * error_counts[name]
 
     # Traverse forward
-    display = _AddDisplay()
+    display = _AddDisplay(open_on_failure=args.open)
     action = make_process_module(options, args.timeout)
 
     display.start(len(dag.modules))
@@ -466,18 +480,8 @@ def main():
     duration = time.time() - start_time
     print_summary(results, dag, duration)
 
-    failed_paths = [tr.filepath for tr in results if tr.error]
-    if failed_paths and args.open:
-        if platform.system() == "Darwin":
-            opener = "open"
-        elif platform.system() == "Windows":
-            opener = "start"
-        else:
-            opener = "xdg-open"
-        for fp in failed_paths:
-            subprocess.Popen([opener, str(fp)])
-
-    sys.exit(1 if failed_paths else 0)
+    failed = any(tr.error for tr in results)
+    sys.exit(1 if failed else 0)
 
 
 if __name__ == "__main__":
