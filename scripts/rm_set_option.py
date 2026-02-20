@@ -8,11 +8,14 @@ whether the file still builds. Processes files in reverse import-DAG order
 """
 
 import argparse
+import hashlib
+import json
 import re
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Callable
 
 from dag_traversal import (
@@ -31,6 +34,58 @@ from set_option_utils import (
     lakefile_pattern,
     removable_pattern,
 )
+
+
+PROGRESS_FILE = PROJECT_DIR / "scripts" / ".rm_set_option_progress.jsonl"
+
+_progress_lock = Lock()
+
+
+def _current_toolchain() -> str:
+    return (PROJECT_DIR / "lean-toolchain").read_text().strip()
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_progress() -> dict[str, str] | None:
+    """Load progress file. Returns {module: sha256} or None if invalid/missing."""
+    if not PROGRESS_FILE.exists():
+        return None
+    progress: dict[str, str] = {}
+    toolchain = _current_toolchain()
+    with open(PROGRESS_FILE) as f:
+        for i, line in enumerate(f):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                record = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if i == 0:
+                if record.get("toolchain") != toolchain:
+                    return None
+                continue
+            if "module" in record and "sha256" in record:
+                progress[record["module"]] = record["sha256"]
+    return progress
+
+
+def init_progress():
+    """Write toolchain header to a fresh progress file."""
+    with open(PROGRESS_FILE, "w") as f:
+        json.dump({"toolchain": _current_toolchain()}, f)
+        f.write("\n")
+
+
+def save_progress(module: str, sha256: str):
+    """Append a completion record (thread-safe)."""
+    with _progress_lock:
+        with open(PROGRESS_FILE, "a") as f:
+            json.dump({"module": module, "sha256": sha256}, f)
+            f.write("\n")
 
 
 @dataclass
@@ -191,6 +246,7 @@ def make_process_file(
         skipped = count_skipped(abs_path, options)
 
         if not removable_lines:
+            save_progress(module_name, file_sha256(abs_path))
             return FileResult(skipped=skipped)
 
         original_text = abs_path.read_text()
@@ -206,6 +262,7 @@ def make_process_file(
 
             ok, _ = lake_build(module_name, PROJECT_DIR, timeout)
             if ok:
+                save_progress(module_name, file_sha256(abs_path))
                 return FileResult(
                     removable=len(removable_lines),
                     removed=len(removable_lines),
@@ -230,6 +287,7 @@ def make_process_file(
                     abs_path.write_text("".join(current))
                     kept += 1
 
+            save_progress(module_name, file_sha256(abs_path))
             return FileResult(
                 removable=len(removable_lines),
                 removed=removed,
@@ -296,6 +354,11 @@ def main():
         action="store_true",
         help="Skip the initial lake build (assumes .oleans are already fresh)",
     )
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Ignore progress from a previous interrupted run",
+    )
     args = parser.parse_args()
 
     options = [args.option] if args.option else DEFAULT_OPTIONS
@@ -326,8 +389,29 @@ def main():
     total_removable = sum(len(v) for v in removable_map.values())
     print(f"  {len(removable_map)} files with {total_removable} removable lines")
 
+    # Step 3b: filter out modules completed in a previous run
+    resumed = 0
+    if not args.no_resume:
+        progress = load_progress()
+        if progress:
+            to_skip = []
+            for name in list(removable_map):
+                if name in progress:
+                    fp = full_dag.project_root / full_dag.modules[name].filepath
+                    if fp.exists() and file_sha256(fp) == progress[name]:
+                        to_skip.append(name)
+            for name in to_skip:
+                del removable_map[name]
+            resumed = len(to_skip)
+            if resumed:
+                total_removable = sum(len(v) for v in removable_map.values())
+                print(f"  Resuming: skipped {resumed} already-processed modules"
+                      f" ({len(removable_map)} remaining, {total_removable} lines)")
+
     if not removable_map:
         print("Nothing to do.")
+        if PROGRESS_FILE.exists():
+            PROGRESS_FILE.unlink()
         return
 
     # Step 4: initial build to ensure all .oleans are fresh
@@ -361,6 +445,10 @@ def main():
         print(f"\nTotal: {len(removable_map)} files, {total_removable} lines")
         print("(dry run — no changes made)")
         return
+
+    # Initialize progress file (preserves existing entries on resume)
+    if not PROGRESS_FILE.exists() or resumed == 0:
+        init_progress()
 
     display = _RemoveDisplay()
     action = make_process_file(removable_map, options, args.timeout)
@@ -406,6 +494,11 @@ def main():
             summary.files_unchanged += 1
 
     print_summary(summary)
+
+    # Clean up progress file on successful complete run
+    if summary.files_errored == 0 and PROGRESS_FILE.exists():
+        PROGRESS_FILE.unlink()
+        print("  (progress file cleaned up)")
 
 
 if __name__ == "__main__":
