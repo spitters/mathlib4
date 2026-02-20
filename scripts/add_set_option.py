@@ -7,6 +7,7 @@ built after all its imports are clean.  No "discovery" builds needed.
 """
 
 import argparse
+import platform
 import re
 import subprocess
 import sys
@@ -390,6 +391,11 @@ def main():
         action="store_true",
         help="Skip the initial build (build every module individually)",
     )
+    parser.add_argument(
+        "--open",
+        action="store_true",
+        help="Open files that failed to fix in the default editor",
+    )
     args = parser.parse_args()
 
     options = [args.option] if args.option else DEFAULT_OPTIONS
@@ -460,8 +466,18 @@ def main():
     duration = time.time() - start_time
     print_summary(results, dag, duration)
 
-    failed = any(tr.error for tr in results)
-    sys.exit(1 if failed else 0)
+    failed_paths = [tr.filepath for tr in results if tr.error]
+    if failed_paths and args.open:
+        if platform.system() == "Darwin":
+            opener = "open"
+        elif platform.system() == "Windows":
+            opener = "start"
+        else:
+            opener = "xdg-open"
+        for fp in failed_paths:
+            subprocess.Popen([opener, str(fp)])
+
+    sys.exit(1 if failed_paths else 0)
 
 
 if __name__ == "__main__":
