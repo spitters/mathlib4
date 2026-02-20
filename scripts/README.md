@@ -105,21 +105,25 @@ behaviour. They share a common DAG traversal library that parallelises work in i
   scripts/dag_traversal.py --forward -j4 'my_script {}'
   ```
 
-- `add_backward_defeq.py`
-  Adds `set_option backward.isDefEq.respectTransparency false in` before declarations that fail
-  to build. Traverses the DAG **forward** (roots first) so each module is only built after all
-  its imports are clean. For each error, finds the enclosing
-  declaration, inserts the set_option line, and rebuilds to verify.
-  Usage: `python3 scripts/add_backward_defeq.py [--max-workers N] [--timeout N] [--files FILE ...]`
+- `set_option_utils.py`
+  Shared configuration for `add_set_option.py` and `rm_set_option.py`. Contains the list of
+  managed options (`backward.isDefEq.respectTransparency`, `backward.whnf.reducibleClassField`)
+  and helpers for generating `set_option` lines and regex patterns.
 
-- `remove_backward_defeq.py`
-  Removes unnecessary `set_option backward.isDefEq.respectTransparency false in` lines.
-  Only targets lines without a trailing comment; lines like
-  `set_option backward.isDefEq.respectTransparency false in -- reason` are left untouched.
-  Traverses the DAG **backward** (leaves first) so removing an option from an upstream file
-  doesn't invalidate cached builds of downstream files. Tries removing all occurrences at once;
-  if that fails, falls back to one-at-a-time removal.
-  Usage: `python3 scripts/remove_backward_defeq.py [--dry-run] [--max-workers N] [--files FILE ...]`
+- `add_set_option.py`
+  Adds `set_option ... false in` before declarations that fail to build. Traverses the DAG
+  **forward** (roots first) so each module is only built after all its imports are clean. For
+  each error, finds the enclosing declaration and tries candidate option combinations
+  (most-recently-successful first, then each single option, then all together).
+  Usage: `python3 scripts/add_set_option.py [--option NAME] [--max-workers N] [--timeout N] [--files FILE ...]`
+
+- `rm_set_option.py`
+  Removes unnecessary `set_option ... false in` lines. Only targets lines without a trailing
+  comment; lines like `set_option ... false in -- reason` are left untouched. Traverses the DAG
+  **backward** (leaves first) so removing an option from an upstream file doesn't invalidate
+  cached builds of downstream files. Tries removing all occurrences at once; if that fails,
+  falls back to one-at-a-time removal.
+  Usage: `python3 scripts/rm_set_option.py [--option NAME] [--dry-run] [--max-workers N] [--files FILE ...]`
 
 **CI workflow**
 - `lake-build-with-retry.sh`

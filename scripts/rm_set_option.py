@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Remove unnecessary `set_option backward.isDefEq.respectTransparency false in` from Mathlib.
+Remove unnecessary `set_option ... false in` from Mathlib.
 
 Tries removing each occurrence (that isn't followed by a comment), testing
 whether the file still builds. Processes files in reverse import-DAG order
@@ -24,19 +24,12 @@ from dag_traversal import (
     lake_build,
     traverse_dag,
 )
-
-PROJECT_DIR = Path(__file__).resolve().parent.parent
-
-# Patterns
-SET_OPTION_REMOVABLE = re.compile(
-    r"^\s*set_option backward\.isDefEq\.respectTransparency false in\s*$"
-)
-SET_OPTION_WITH_COMMENT = re.compile(
-    r"^\s*set_option backward\.isDefEq\.respectTransparency false in\s+--"
-)
-LAKEFILE_OPTION = re.compile(
-    r"^\s*⟨`backward\.isDefEq\.respectTransparency,\s*false⟩,?\s*\n",
-    re.MULTILINE,
+from set_option_utils import (
+    DEFAULT_OPTIONS,
+    PROJECT_DIR,
+    commented_pattern,
+    lakefile_pattern,
+    removable_pattern,
 )
 
 
@@ -105,25 +98,32 @@ class _RemoveDisplay(Display):
             self._redraw()
 
 
-def handle_lakefile() -> bool:
-    """Check and remove the option from lakefile.lean. Returns True if changed."""
+def handle_lakefile(options: list[str]) -> bool:
+    """Check and remove options from lakefile.lean. Returns True if changed."""
     lakefile = PROJECT_DIR / "lakefile.lean"
     content = lakefile.read_text()
-    if "backward.isDefEq.respectTransparency" not in content:
-        return False
-    new_content = LAKEFILE_OPTION.sub("", content)
-    if new_content != content:
-        lakefile.write_text(new_content)
-        print("Removed backward.isDefEq.respectTransparency from lakefile.lean")
-        return True
-    return False
+    changed = False
+    for opt in options:
+        if opt not in content:
+            continue
+        pat = lakefile_pattern(opt)
+        new_content = pat.sub("", content)
+        if new_content != content:
+            content = new_content
+            changed = True
+            print(f"Removed {opt} from lakefile.lean")
+    if changed:
+        lakefile.write_text(content)
+    return changed
 
 
-def scan_files(dag: DAG) -> dict[str, list[int]]:
+def scan_files(dag: DAG, options: list[str]) -> dict[str, list[int]]:
     """Find files with removable set_option lines.
 
     Returns dict of module_name -> list of 0-indexed line numbers.
     """
+    removable_pats = [removable_pattern(opt) for opt in options]
+    commented_pats = [commented_pattern(opt) for opt in options]
     results: dict[str, list[int]] = {}
     for name, info in dag.modules.items():
         filepath = dag.project_root / info.filepath
@@ -132,20 +132,21 @@ def scan_files(dag: DAG) -> dict[str, list[int]]:
         lines = filepath.read_text().splitlines(keepends=True)
         removable = []
         for i, line in enumerate(lines):
-            if SET_OPTION_WITH_COMMENT.match(line):
+            if any(p.match(line) for p in commented_pats):
                 continue
-            if SET_OPTION_REMOVABLE.match(line):
+            if any(p.match(line) for p in removable_pats):
                 removable.append(i)
         if removable:
             results[name] = removable
     return results
 
 
-def count_skipped(filepath: Path) -> int:
+def count_skipped(filepath: Path, options: list[str]) -> int:
     """Count set_option lines with trailing comments."""
+    commented_pats = [commented_pattern(opt) for opt in options]
     count = 0
     for line in filepath.read_text().splitlines():
-        if SET_OPTION_WITH_COMMENT.match(line):
+        if any(p.match(line) for p in commented_pats):
             count += 1
     return count
 
@@ -179,6 +180,7 @@ def initial_build():
 
 def make_process_file(
     removable_map: dict[str, list[int]],
+    options: list[str],
     timeout: int,
 ) -> Callable:
     """Create the per-file action callback."""
@@ -186,7 +188,7 @@ def make_process_file(
     def process_file(module_name: str, filepath: Path) -> FileResult:
         abs_path = filepath
         removable_lines = removable_map.get(module_name, [])
-        skipped = count_skipped(abs_path)
+        skipped = count_skipped(abs_path, options)
 
         if not removable_lines:
             return FileResult(skipped=skipped)
@@ -261,7 +263,11 @@ def print_summary(summary: Summary):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Remove set_option backward.isDefEq.respectTransparency false in"
+        description="Remove unnecessary set_option ... false in lines"
+    )
+    parser.add_argument(
+        "--option",
+        help="Only scan/remove this specific option (default: all known options)",
     )
     parser.add_argument(
         "--dry-run",
@@ -292,11 +298,13 @@ def main():
     )
     args = parser.parse_args()
 
+    options = [args.option] if args.option else DEFAULT_OPTIONS
+
     start_time = time.time()
 
     # Step 1: lakefile
     if not args.dry_run:
-        handle_lakefile()
+        handle_lakefile(options)
 
     # Step 2: build DAG
     print("Building import DAG...", flush=True)
@@ -305,7 +313,7 @@ def main():
 
     # Step 3: scan for removable lines
     print("Scanning for removable set_option lines...", flush=True)
-    removable_map = scan_files(full_dag)
+    removable_map = scan_files(full_dag, options)
 
     if args.files:
         # Filter to requested files
@@ -355,7 +363,7 @@ def main():
         return
 
     display = _RemoveDisplay()
-    action = make_process_file(removable_map, args.timeout)
+    action = make_process_file(removable_map, options, args.timeout)
 
     display.start(len(full_dag.modules))
     try:

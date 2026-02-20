@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Add `set_option backward.isDefEq.respectTransparency false in` before failing declarations.
+Add `set_option ... false in` before failing declarations.
 
 Traverses the import DAG forward (roots first) so that each module is only
 built after all its imports are clean.  No "discovery" builds needed.
@@ -13,6 +13,7 @@ import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from typing import Callable
 
 from dag_traversal import (
@@ -25,10 +26,11 @@ from dag_traversal import (
     lake_build,
     traverse_dag,
 )
-
-PROJECT_DIR = Path(__file__).resolve().parent.parent
-
-SET_OPTION_LINE = "set_option backward.isDefEq.respectTransparency false in\n"
+from set_option_utils import (
+    DEFAULT_OPTIONS,
+    PROJECT_DIR,
+    set_option_line,
+)
 
 
 @dataclass
@@ -184,8 +186,46 @@ class UnfixableError(Exception):
         super().__init__(msg)
 
 
-def make_process_module(timeout: int) -> Callable:
+def make_process_module(
+    options: list[str],
+    timeout: int,
+) -> Callable:
     """Create the per-module action callback."""
+
+    # Thread-safe last-successful combination, shared across modules.
+    _last_lock = Lock()
+    _last: list[str] = [options[0]]
+
+    def _get_last() -> list[str]:
+        with _last_lock:
+            return list(_last)
+
+    def _set_last(combo: list[str]):
+        nonlocal _last
+        with _last_lock:
+            _last = list(combo)
+
+    def option_already_present(lines: list[str], decl_start: int) -> bool:
+        """Check if any managed set_option is already at decl_start."""
+        for opt in options:
+            needle = set_option_line(opt).strip()
+            if decl_start > 0 and needle in lines[decl_start - 1]:
+                return True
+            if lines[decl_start].strip().startswith(needle):
+                return True
+        return False
+
+    def candidates() -> list[list[str]]:
+        """Generate candidate combinations to try, last_successful first."""
+        seen: list[list[str]] = []
+        seen.append(_get_last())
+        for opt in options:
+            combo = [opt]
+            if combo not in seen:
+                seen.append(combo)
+        if options not in seen:
+            seen.append(list(options))
+        return seen
 
     def process_module(module_name: str, filepath: Path) -> FileResult:
         rel_path = filepath.relative_to(PROJECT_DIR)
@@ -209,47 +249,55 @@ def make_process_module(timeout: int) -> Callable:
 
         try:
             # Process errors first-to-last. After each insertion, line numbers
-            # shift by 1, so we track the cumulative offset.
+            # shift, so we track the cumulative offset.
             offset = 0
             for error_line in error_lines:
                 adjusted_line = error_line + offset
                 decl_start = find_declaration_start(lines, adjusted_line)
 
                 # Check if set_option already present
-                if decl_start > 0 and SET_OPTION_LINE.strip() in lines[decl_start - 1]:
-                    already_present += 1
-                    continue
-                if lines[decl_start].strip().startswith(SET_OPTION_LINE.strip()):
+                if option_already_present(lines, decl_start):
                     already_present += 1
                     continue
 
-                # Insert set_option
-                lines = lines[:decl_start] + [SET_OPTION_LINE] + lines[decl_start:]
-                offset += 1
+                # Try each candidate combination
+                succeeded = False
+                last_output = output
+                for combo in candidates():
+                    insert = [set_option_line(opt) for opt in combo]
+                    new_lines = lines[:decl_start] + insert + lines[decl_start:]
+                    filepath.write_text("".join(new_lines))
+                    ok, build_output = lake_build(module_name, PROJECT_DIR, timeout)
+                    last_output = build_output
 
-                # Write and test
-                filepath.write_text("".join(lines))
-                ok, output = lake_build(module_name, PROJECT_DIR, timeout)
+                    if ok:
+                        lines = new_lines
+                        offset += len(combo)
+                        fixed += 1
+                        _set_last(combo)
+                        succeeded = True
+                        return FileResult(fixed=fixed, already_present=already_present)
 
-                if ok:
-                    fixed += 1
-                    # No more errors — done
-                    return FileResult(fixed=fixed, already_present=already_present)
+                    # Check if this specific error is gone
+                    new_errors = parse_errors_in_file(build_output, rel_path)
+                    shifted = adjusted_line + len(combo)
+                    if shifted not in new_errors:
+                        lines = new_lines
+                        offset += len(combo)
+                        fixed += 1
+                        _set_last(combo)
+                        succeeded = True
+                        break
 
-                # Check if this error is gone
-                new_errors = parse_errors_in_file(output, rel_path)
-                # The error was at error_line; after insertion it would be at error_line+offset
-                if adjusted_line + 1 in new_errors:
-                    # Fix didn't help — revert this insertion
-                    lines = lines[:decl_start] + lines[decl_start + 1 :]
-                    offset -= 1
+                    # Revert this attempt
                     filepath.write_text("".join(lines))
+
+                if not succeeded:
                     raise UnfixableError(
-                        f"set_option didn't fix error at line {error_line}",
-                        output,
+                        f"no option combination fixed error at line {error_line}",
+                        last_output,
                     )
 
-                fixed += 1
         except UnfixableError:
             raise
         except BaseException:
@@ -314,8 +362,11 @@ def print_summary(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Add set_option backward.isDefEq.respectTransparency false in "
-        "before failing declarations."
+        description="Add set_option ... false in before failing declarations."
+    )
+    parser.add_argument(
+        "--option",
+        help="Only use this specific option (default: try all known options)",
     )
     parser.add_argument(
         "--max-workers",
@@ -340,6 +391,8 @@ def main():
         help="Skip the initial build (build every module individually)",
     )
     args = parser.parse_args()
+
+    options = [args.option] if args.option else DEFAULT_OPTIONS
 
     start_time = time.time()
 
@@ -382,7 +435,7 @@ def main():
 
     # Traverse forward
     display = _AddDisplay()
-    action = make_process_module(args.timeout)
+    action = make_process_module(options, args.timeout)
 
     display.start(len(dag.modules))
     try:
