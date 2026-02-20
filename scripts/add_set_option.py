@@ -42,14 +42,21 @@ class FileResult:
     already_present: int = 0
 
 
-def _opener_cmd() -> str:
+def _opener_cmd() -> list[str]:
     """Return the platform-appropriate file-open command."""
+    import shutil
+
     system = platform.system()
     if system == "Darwin":
-        return "open"
+        return ["open"]
     elif system == "Windows":
-        return "start"
-    return "xdg-open"
+        return ["start"]
+    # Linux: prefer code, then xdg-open
+    if shutil.which("code"):
+        return ["code", "--goto"]
+    if shutil.which("xdg-open"):
+        return ["xdg-open"]
+    return ["open"]
 
 
 class _AddDisplay(Display):
@@ -85,7 +92,7 @@ class _AddDisplay(Display):
                 self.messages.append(f"  ! {module_name}: {error}")
                 if self.open_on_failure:
                     filepath = module_name.replace(".", "/") + ".lean"
-                    subprocess.Popen([_opener_cmd(), filepath], cwd=PROJECT_DIR)
+                    subprocess.Popen(_opener_cmd() + [filepath], cwd=PROJECT_DIR)
             self._redraw()
 
 
