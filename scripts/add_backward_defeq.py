@@ -136,6 +136,15 @@ def parse_error_modules(build_output: str) -> set[str]:
     return modules
 
 
+def count_errors_per_module(build_output: str) -> dict[str, int]:
+    """Count errors per module from build output."""
+    counts: dict[str, int] = {}
+    for match in LAKE_ERROR_PATTERN.finditer(build_output):
+        module = match.group(1).replace("/", ".").removesuffix(".lean")
+        counts[module] = counts.get(module, 0) + 1
+    return counts
+
+
 PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]")
 
 
@@ -352,13 +361,24 @@ def main():
     # then skip everything outside their forward cone in the DAG.
     skip: set[str] | None = None
     if not args.no_initial and not args.files:
-        error_mods, _ = initial_build()
+        error_mods, build_output = initial_build()
         if not error_mods:
             print("No errors found, nothing to do.")
             return
         cone = dag.forward_cone(error_mods)
         skip = set(dag.modules.keys()) - cone
         print(f"  {len(cone)} modules in forward cone, skipping {len(skip)}")
+
+    # Weight = LOC × error count, so expensive files get critical-path
+    # priority in the DAG traversal scheduler.
+    weights: dict[str, int] | None = None
+    if not args.no_initial and not args.files:
+        error_counts = count_errors_per_module(build_output)
+        weights = {}
+        for name in error_counts:
+            if name in dag.modules:
+                fp = dag.project_root / dag.modules[name].filepath
+                weights[name] = len(fp.read_text().splitlines()) * error_counts[name]
 
     # Traverse forward
     display = _AddDisplay()
@@ -375,6 +395,7 @@ def main():
             module_callback=display.on_module,
             stop_on_failure=True,
             skip=skip,
+            weights=weights,
         )
     except KeyboardInterrupt:
         display.stop()

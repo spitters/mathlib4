@@ -335,6 +335,14 @@ def main():
     target_modules = set(removable_map.keys())
     skip_modules = set(full_dag.modules.keys()) - target_modules
 
+    # Weight = LOC × number of removable lines, so expensive files get
+    # critical-path priority in the DAG traversal scheduler.
+    weights = {}
+    for name, removable_lines in removable_map.items():
+        fp = full_dag.project_root / full_dag.modules[name].filepath
+        loc = len(fp.read_text().splitlines())
+        weights[name] = loc * len(removable_lines)
+
     if args.dry_run:
         sub_dag = full_dag.subset(target_modules)
         levels = sub_dag.levels_backward()
@@ -359,6 +367,7 @@ def main():
             progress_callback=display.on_progress,
             module_callback=display.on_module,
             skip=skip_modules,
+            weights=weights,
         )
     except KeyboardInterrupt:
         display.stop()

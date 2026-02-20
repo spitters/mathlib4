@@ -307,14 +307,27 @@ class DAG:
         return levels
 
 
-def _compute_depths(successors_of: dict[str, list[str]]) -> dict[str, int]:
+def _compute_depths(
+    successors_of: dict[str, list[str]],
+    weights: dict[str, int] | None = None,
+) -> dict[str, int]:
     """Compute the longest successor-chain length for each module.
 
-    depth[m] = 0 if m has no successors in the graph, else
-    1 + max(depth[s] for s in successors_of[m]).
+    Without *weights*:
+        depth[m] = 0 if m has no successors, else
+        1 + max(depth[s] for s in successors_of[m]).
 
-    Used to prioritise modules whose completion unblocks deeper
-    chains of work, improving overall parallelism.
+    With *weights*:
+        w(m) = weights.get(m, 0)
+        depth[m] = w(m) if m has no successors, else
+        w(m) + max(depth[s] for s in successors_of[m]).
+
+        Modules absent from *weights* (e.g. skip-set modules that are
+        processed instantly) default to weight 0, so they don't inflate
+        the critical-path estimate.
+
+    Used to prioritise modules whose completion unblocks the costliest
+    chains of future work, improving overall parallelism.
 
     Nodes involved in cycles (which shouldn't exist in a well-formed
     import graph) are assigned depth 0.
@@ -332,7 +345,11 @@ def _compute_depths(successors_of: dict[str, list[str]]) -> dict[str, int]:
             if processed:
                 visiting.discard(node)
                 succs = [s for s in successors_of.get(node, []) if s in depths]
-                depths[node] = (1 + max(depths[s] for s in succs)) if succs else 0
+                if weights is not None:
+                    w = weights.get(node, 0)
+                    depths[node] = (w + max(depths[s] for s in succs)) if succs else w
+                else:
+                    depths[node] = (1 + max(depths[s] for s in succs)) if succs else 0
                 continue
             if node in depths:
                 continue
@@ -358,6 +375,7 @@ def traverse_dag(
     progress_callback: Callable[[int, int, int], None] | None = None,
     stop_on_failure: bool = False,
     skip: set[str] | None = None,
+    weights: dict[str, int] | None = None,
 ) -> list[TraversalResult]:
     """Process modules in DAG order with maximum parallelism.
 
@@ -379,6 +397,9 @@ def traverse_dag(
         skip: Set of module names to mark as completed without running the
               action.  Useful after an initial build (e.g. a full ``lake build``)
               identifies which modules are already clean.
+        weights: Optional per-module weights for critical-path priority.
+                 Modules not in the dict default to weight 0 (e.g. skip-set
+                 modules).  When None, uniform weight 1 is used.
 
     Returns:
         List of TraversalResult for all processed modules.
@@ -418,8 +439,8 @@ def traverse_dag(
         return []
 
     # Pre-compute critical-path depths so we can prioritise modules
-    # that unblock the longest chains of future work.
-    depths = _compute_depths(successors_of)
+    # that unblock the costliest chains of future work.
+    depths = _compute_depths(successors_of, weights)
 
     lock = Lock()
     done_event = Event()
