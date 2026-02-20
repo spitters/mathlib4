@@ -227,26 +227,34 @@ def make_process_module(
         with _last_lock:
             _last = list(combo)
 
-    def option_already_present(lines: list[str], decl_start: int) -> bool:
-        """Check if any managed set_option is already at decl_start."""
-        for opt in options:
-            needle = set_option_line(opt).strip()
-            if decl_start > 0 and needle in lines[decl_start - 1]:
-                return True
-            if lines[decl_start].strip().startswith(needle):
-                return True
-        return False
+    def options_present_at(lines: list[str], decl_start: int) -> set[str]:
+        """Return which managed options already appear at/before decl_start."""
+        present: set[str] = set()
+        # Scan decl_start and preceding lines for consecutive set_option lines
+        for idx in range(decl_start, max(decl_start - len(options) - 1, -1), -1):
+            for opt in options:
+                needle = set_option_line(opt).strip()
+                if needle in lines[idx]:
+                    present.add(opt)
+        return present
 
-    def candidates() -> list[list[str]]:
-        """Generate candidate combinations to try, last_successful first."""
+    def candidates(missing: list[str]) -> list[list[str]]:
+        """Generate candidate combinations from missing options.
+
+        Tries last_successful (filtered to missing) first, then each single
+        missing option, then all missing options together.
+        """
         seen: list[list[str]] = []
-        seen.append(_get_last())
-        for opt in options:
+        # Last successful, filtered to only missing options
+        ls_filtered = [opt for opt in _get_last() if opt in missing]
+        if ls_filtered:
+            seen.append(ls_filtered)
+        for opt in missing:
             combo = [opt]
             if combo not in seen:
                 seen.append(combo)
-        if options not in seen:
-            seen.append(list(options))
+        if len(missing) > 1 and missing not in seen:
+            seen.append(list(missing))
         return seen
 
     def process_module(module_name: str, filepath: Path) -> FileResult:
@@ -277,15 +285,17 @@ def make_process_module(
                 adjusted_line = error_line + offset
                 decl_start = find_declaration_start(lines, adjusted_line)
 
-                # Check if set_option already present
-                if option_already_present(lines, decl_start):
+                # Check which options are already present
+                present = options_present_at(lines, decl_start)
+                missing = [opt for opt in options if opt not in present]
+                if not missing:
                     already_present += 1
                     continue
 
-                # Try each candidate combination
+                # Try each candidate combination of missing options
                 succeeded = False
                 last_output = output
-                for combo in candidates():
+                for combo in candidates(missing):
                     insert = [set_option_line(opt) for opt in combo]
                     new_lines = lines[:decl_start] + insert + lines[decl_start:]
                     filepath.write_text("".join(new_lines))
