@@ -2,15 +2,19 @@
 """
 Reusable parallel DAG traversal for Lean import graphs.
 
-Parses the import DAG from .lean source files and parallelizes an action
+Parses the import DAG from `.lean` source files and parallelizes an action
 over a forward or backward traversal.  Each module is submitted to the
 thread pool the moment its last in-DAG dependency finishes, giving true
 maximum parallelism.
 
 CLI usage:
     dag_traversal.py --forward 'lake build {}'
-    dag_traversal.py --backward --module 'my_script {}'
     dag_traversal.py --forward -j4 'echo {}'
+
+By default, {} is replaced with the file path (e.g. Mathlib/Foo/Bar.lean).
+Use --module to substitute the module name instead (e.g. Mathlib.Foo.Bar):
+
+    dag_traversal.py --backward --module 'my_script {}'
 
 Library usage:
     from dag_traversal import DAG, traverse_dag

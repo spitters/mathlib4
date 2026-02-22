@@ -4,8 +4,8 @@
 If filenames or module names are provided on stdin, outputs only those modules
 in topological order; otherwise outputs all modules.
 
-By default modules are printed leaves-last: if A imports B, then A appears
-before B. Use --reverse for leaves-first order.
+By default modules are printed leaves-last: if A imports B, then B appears
+before A. Use --reverse for leaves-first order.
 """
 
 import argparse
@@ -21,7 +21,7 @@ def main():
     )
     parser.add_argument(
         "--reverse", action="store_true",
-        help="Leaves first (if A imports B, B appears before A)",
+        help="Leaves first (if A imports B, A appears before B)",
     )
     args = parser.parse_args()
 
