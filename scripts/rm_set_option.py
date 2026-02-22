@@ -20,12 +20,8 @@ from typing import Callable
 
 from dag_traversal import (
     DAG,
+    DAGTraverser,
     Display,
-    force_exit,
-    inflight_register,
-    inflight_unregister,
-    lake_build,
-    traverse_dag,
 )
 from set_option_utils import (
     DEFAULT_OPTIONS,
@@ -237,6 +233,7 @@ def make_process_file(
     removable_map: dict[str, list[int]],
     options: list[str],
     timeout: int,
+    traverser: DAGTraverser,
 ) -> Callable:
     """Create the per-file action callback."""
 
@@ -252,7 +249,7 @@ def make_process_file(
         original_text = abs_path.read_text()
         original = original_text.splitlines(keepends=True)
 
-        inflight_register(abs_path, original_text)
+        traverser.inflight_register(abs_path, original_text)
 
         try:
             # Phase 1: try removing ALL at once
@@ -260,7 +257,7 @@ def make_process_file(
             new_lines = [line for i, line in enumerate(original) if i not in removable_set]
             abs_path.write_text("".join(new_lines))
 
-            ok, _ = lake_build(module_name, PROJECT_DIR, timeout)
+            ok, _ = traverser.lake_build(module_name, PROJECT_DIR, timeout)
             if ok:
                 save_progress(module_name, file_sha256(abs_path))
                 return FileResult(
@@ -279,7 +276,7 @@ def make_process_file(
                 test = current[:line_idx] + current[line_idx + 1 :]
                 abs_path.write_text("".join(test))
 
-                ok, _ = lake_build(module_name, PROJECT_DIR, timeout)
+                ok, _ = traverser.lake_build(module_name, PROJECT_DIR, timeout)
                 if ok:
                     current = test
                     removed += 1
@@ -298,7 +295,7 @@ def make_process_file(
             abs_path.write_text(original_text)
             raise
         finally:
-            inflight_unregister(abs_path)
+            traverser.inflight_unregister(abs_path)
 
     return process_file
 
@@ -450,12 +447,13 @@ def main():
     if not PROGRESS_FILE.exists() or resumed == 0:
         init_progress()
 
+    traverser = DAGTraverser()
     display = _RemoveDisplay()
-    action = make_process_file(removable_map, options, args.timeout)
+    action = make_process_file(removable_map, options, args.timeout, traverser)
 
     display.start(len(full_dag.modules))
     try:
-        results = traverse_dag(
+        results = traverser.traverse(
             full_dag,
             action,
             direction="backward",
@@ -468,7 +466,7 @@ def main():
     except KeyboardInterrupt:
         display.stop()
         print("\nInterrupted. Press Ctrl-C again if the process doesn't exit.", flush=True)
-        force_exit(1)
+        traverser.force_exit(1)
     finally:
         display.stop()
 

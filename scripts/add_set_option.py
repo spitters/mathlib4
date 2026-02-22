@@ -19,13 +19,9 @@ from typing import Callable
 
 from dag_traversal import (
     DAG,
+    DAGTraverser,
     Display,
     TraversalResult,
-    force_exit,
-    inflight_register,
-    inflight_unregister,
-    lake_build,
-    traverse_dag,
 )
 from set_option_utils import (
     DEFAULT_OPTIONS,
@@ -211,6 +207,7 @@ class UnfixableError(Exception):
 def make_process_module(
     options: list[str],
     timeout: int,
+    traverser: DAGTraverser,
 ) -> Callable:
     """Create the per-module action callback."""
 
@@ -271,7 +268,7 @@ def make_process_module(
         rel_path = filepath.relative_to(PROJECT_DIR)
 
         # Initial build
-        ok, output = lake_build(module_name, PROJECT_DIR, timeout)
+        ok, output = traverser.lake_build(module_name, PROJECT_DIR, timeout)
         if ok:
             return FileResult()
 
@@ -285,7 +282,7 @@ def make_process_module(
         fixed = 0
         already_present = 0
 
-        inflight_register(filepath, original_text)
+        traverser.inflight_register(filepath, original_text)
 
         try:
             # Process errors first-to-last. After each insertion, line numbers
@@ -309,7 +306,7 @@ def make_process_module(
                     insert = [set_option_line(opt) for opt in combo]
                     new_lines = lines[:decl_start] + insert + lines[decl_start:]
                     filepath.write_text("".join(new_lines))
-                    ok, build_output = lake_build(module_name, PROJECT_DIR, timeout)
+                    ok, build_output = traverser.lake_build(module_name, PROJECT_DIR, timeout)
                     last_output = build_output
 
                     if ok:
@@ -346,7 +343,7 @@ def make_process_module(
             filepath.write_text(original_text)
             raise
         finally:
-            inflight_unregister(filepath)
+            traverser.inflight_unregister(filepath)
 
         return FileResult(fixed=fixed, already_present=already_present)
 
@@ -481,12 +478,13 @@ def main():
                 weights[name] = len(fp.read_text().splitlines()) * error_counts[name]
 
     # Traverse forward
+    traverser = DAGTraverser()
     display = _AddDisplay(open_on_failure=args.open)
-    action = make_process_module(options, args.timeout)
+    action = make_process_module(options, args.timeout, traverser)
 
     display.start(len(dag.modules))
     try:
-        results = traverse_dag(
+        results = traverser.traverse(
             dag,
             action,
             direction="forward",
@@ -500,7 +498,7 @@ def main():
     except KeyboardInterrupt:
         display.stop()
         print("\nInterrupted. Press Ctrl-C again if the process doesn't exit.", flush=True)
-        force_exit(1)
+        traverser.force_exit(1)
     finally:
         display.stop()
 

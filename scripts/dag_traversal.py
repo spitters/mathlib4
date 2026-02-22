@@ -17,10 +17,11 @@ Use --module to substitute the module name instead (e.g. Mathlib.Foo.Bar):
     dag_traversal.py --backward --module 'my_script {}'
 
 Library usage:
-    from dag_traversal import DAG, traverse_dag
+    from dag_traversal import DAG, DAGTraverser
 
     dag = DAG.from_directories(Path("."))
-    results = traverse_dag(dag, my_action, direction="backward")
+    traverser = DAGTraverser()
+    results = traverser.traverse(dag, my_action, direction="backward")
 """
 
 import argparse
@@ -39,10 +40,6 @@ from pathlib import Path
 from threading import Event, Lock
 from typing import Callable
 
-# Set by traverse_dag on KeyboardInterrupt.  Action callbacks can check this
-# to bail out early instead of spawning new subprocesses.
-shutdown_event = Event()
-
 # ANSI escape codes
 CLEAR_LINE = "\033[2K"
 HIDE_CURSOR = "\033[?25l"
@@ -53,111 +50,382 @@ class ShutdownError(Exception):
     """Raised when a shutdown has been requested (e.g. Ctrl-C)."""
 
 
-# Thread-safe registry of in-flight file modifications.  On abnormal exit
-# (e.g. Ctrl-C), any file whose worker was mid-build gets reverted.
-_inflight_lock = Lock()
-_inflight: dict[Path, str] = {}  # filepath -> original content
+class DAGTraverser:
+    """Per-session state for parallel DAG traversal.
 
+    Encapsulates shutdown coordination, in-flight file tracking, and
+    active build management so that independent traversals don't share
+    locks or state.
+    """
 
-def inflight_register(path: Path, content: str):
-    """Register original file content so it can be reverted on abnormal exit."""
-    with _inflight_lock:
-        _inflight[path] = content
+    def __init__(self):
+        #: Set on KeyboardInterrupt.  Action callbacks can check this
+        #: to bail out early instead of spawning new subprocesses.
+        self.shutdown_event = Event()
 
+        # Thread-safe registry of in-flight file modifications.
+        # On abnormal exit (e.g. Ctrl-C), files get reverted.
+        self._inflight_lock = Lock()
+        self._inflight: dict[Path, str] = {}  # filepath -> original content
 
-def inflight_unregister(path: Path):
-    """Unregister a file after processing completes normally."""
-    with _inflight_lock:
-        _inflight.pop(path, None)
+        # Active lake build subprocesses, tracked so force_exit can kill them.
+        self._active_builds_lock = Lock()
+        self._active_builds: set[subprocess.Popen] = set()
 
+        atexit.register(self._revert_inflight)
 
-def _revert_inflight():
-    with _inflight_lock:
-        for path, content in _inflight.items():
-            try:
-                path.write_text(content)
-            except Exception:
-                pass
-        _inflight.clear()
+    def inflight_register(self, path: Path, content: str):
+        """Register original file content so it can be reverted on abnormal exit."""
+        with self._inflight_lock:
+            self._inflight[path] = content
 
+    def inflight_unregister(self, path: Path):
+        """Unregister a file after processing completes normally."""
+        with self._inflight_lock:
+            self._inflight.pop(path, None)
 
-atexit.register(_revert_inflight)
-
-
-def _kill_builds():
-    """Kill all active lake build process groups."""
-    with _active_builds_lock:
-        for proc in _active_builds:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
+    def _revert_inflight(self):
+        with self._inflight_lock:
+            for path, content in self._inflight.items():
                 try:
-                    proc.kill()
-                except ProcessLookupError:
+                    path.write_text(content)
+                except Exception:
                     pass
+            self._inflight.clear()
 
+    def _kill_builds(self):
+        """Kill all active lake build process groups."""
+        with self._active_builds_lock:
+            for proc in self._active_builds:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    try:
+                        proc.kill()
+                    except ProcessLookupError:
+                        pass
 
-def force_exit(code: int = 1):
-    """Kill active builds, revert in-flight files, and force-exit.
+    def force_exit(self, code: int = 1):
+        """Kill active builds, revert in-flight files, and force-exit.
 
-    Uses os._exit to bypass ThreadPoolExecutor's atexit handler, which
-    would block joining worker threads that may still be running builds.
-    """
-    _kill_builds()
-    _revert_inflight()
-    sys.stdout.flush()
-    sys.stderr.flush()
-    os._exit(code)
+        Uses os._exit to bypass ThreadPoolExecutor's atexit handler, which
+        would block joining worker threads that may still be running builds.
+        """
+        self._kill_builds()
+        self._revert_inflight()
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
 
+    def lake_build(
+        self, module_name: str, project_dir: Path, timeout: int = 600,
+    ) -> tuple[bool, str]:
+        """Run lake build for a module. Returns (success, output).
 
-# Active lake build subprocesses, tracked so force_exit can kill them.
-_active_builds_lock = Lock()
-_active_builds: set[subprocess.Popen] = set()
+        Checks shutdown_event before spawning and polls it every 0.5s during
+        the build, killing the subprocess and raising ShutdownError if set.
+        Each build runs in its own process group (start_new_session) so the
+        entire tree (lake + lean children) can be killed cleanly.
+        """
+        if self.shutdown_event.is_set():
+            raise ShutdownError("shutdown requested")
+        proc = subprocess.Popen(
+            ["lake", "build", module_name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd=project_dir,
+            start_new_session=True,
+        )
+        with self._active_builds_lock:
+            self._active_builds.add(proc)
+        try:
+            deadline = time.monotonic() + timeout
+            while True:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False, "Build timed out"
+                try:
+                    stdout, _ = proc.communicate(timeout=min(remaining, 0.5))
+                    return proc.returncode == 0, stdout
+                except subprocess.TimeoutExpired:
+                    if self.shutdown_event.is_set():
+                        raise ShutdownError("shutdown requested")
+        finally:
+            with self._active_builds_lock:
+                self._active_builds.discard(proc)
+            if proc.poll() is None:
+                try:
+                    os.killpg(proc.pid, signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
+                proc.wait()
 
+    def traverse(
+        self,
+        dag: "DAG",
+        action: Callable[[str, Path], object],
+        direction: str = "backward",
+        max_workers: int | None = None,
+        module_callback: Callable[[str, object, Exception | None], None] | None = None,
+        progress_callback: Callable[[int, int, int], None] | None = None,
+        stop_on_failure: bool = False,
+        skip: set[str] | None = None,
+        weights: dict[str, int] | None = None,
+    ) -> list["TraversalResult"]:
+        """Process modules in DAG order with maximum parallelism.
 
-def lake_build(
-    module_name: str, project_dir: Path, timeout: int = 600,
-) -> tuple[bool, str]:
-    """Run lake build for a module. Returns (success, output).
+        When more modules are ready than workers available, modules with
+        longer successor chains are scheduled first (critical-path
+        priority), ensuring that work which unblocks the most future
+        parallelism runs earliest.
 
-    Checks shutdown_event before spawning and polls it every 0.5s during
-    the build, killing the subprocess and raising ShutdownError if set.
-    Each build runs in its own process group (start_new_session) so the
-    entire tree (lake + lean children) can be killed cleanly.
-    """
-    if shutdown_event.is_set():
-        raise ShutdownError("shutdown requested")
-    proc = subprocess.Popen(
-        ["lake", "build", module_name],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        cwd=project_dir,
-        start_new_session=True,
-    )
-    with _active_builds_lock:
-        _active_builds.add(proc)
-    try:
-        deadline = time.monotonic() + timeout
-        while True:
-            remaining = deadline - time.monotonic()
-            if remaining <= 0:
-                return False, "Build timed out"
+        Args:
+            dag: The DAG to traverse.
+            action: Callable(module_name, filepath) -> result.  Raise to signal
+                    failure.
+            direction: "backward" (downstream first) or "forward" (upstream first).
+            max_workers: Thread pool size (default: cpu_count).
+            module_callback: Called after each module as (module_name, result, error).
+            progress_callback: Called after each module as (completed, total, inflight).
+            stop_on_failure: If True, when a module fails (action raises), its
+                             successors in the DAG are skipped.
+            skip: Set of module names to mark as completed without running the
+                  action.  Useful after an initial build (e.g. a full ``lake build``)
+                  identifies which modules are already clean.
+            weights: Optional per-module weights for critical-path priority.
+                     Modules not in the dict default to weight 0 (e.g. skip-set
+                     modules).  When None, uniform weight 1 is used.
+
+        Returns:
+            List of TraversalResult for all processed modules.
+        """
+        all_names = set(dag.modules.keys())
+
+        if direction == "backward":
+            # Process modules that nothing depends on first.
+            # A module's "dependencies" are its importers (things that import it);
+            # once all importers are done, this module can run.
+            deps_of = {
+                name: [m for m in info.importers if m in all_names]
+                for name, info in dag.modules.items()
+            }
+            successors_of = {
+                name: [m for m in info.imports if m in all_names]
+                for name, info in dag.modules.items()
+            }
+        elif direction == "forward":
+            # Process modules with no imports first.
+            deps_of = {
+                name: [m for m in info.imports if m in all_names]
+                for name, info in dag.modules.items()
+            }
+            successors_of = {
+                name: [m for m in info.importers if m in all_names]
+                for name, info in dag.modules.items()
+            }
+        else:
+            raise ValueError(f"Unknown direction: {direction!r}")
+
+        if max_workers is None:
+            max_workers = os.cpu_count() or 4
+
+        total = len(dag.modules)
+        if total == 0:
+            return []
+
+        # Pre-compute critical-path depths so we can prioritise modules
+        # that unblock the costliest chains of future work.
+        depths = _compute_depths(successors_of, weights)
+
+        lock = Lock()
+        done_event = Event()
+        remaining_deps: dict[str, int] = {
+            name: len(deps_of[name]) for name in dag.modules
+        }
+        all_results: list[TraversalResult] = []
+        completed_count = 0
+        inflight = 0
+        skipped: set[str] = set()
+
+        # Priority queue of ready modules: (-depth, name).  Negative depth
+        # gives us a max-heap so deeper chains are scheduled first.
+        ready_queue: list[tuple[int, str]] = []
+
+        def resolve(rel: Path) -> Path:
+            if dag.project_root:
+                return dag.project_root / rel
+            return rel
+
+        def mark_skipped(name: str):
+            """Recursively mark a module and all its successors as skipped."""
+            if name in skipped:
+                return
+            skipped.add(name)
+            for succ in successors_of.get(name, []):
+                if succ in remaining_deps:
+                    mark_skipped(succ)
+
+        def _drain_ready() -> list[str]:
+            """Pop modules from the priority queue up to available workers.
+
+            Must be called with *lock* held.  Returns the names to submit
+            (submission itself happens outside the lock).
+            """
+            nonlocal inflight
+            to_submit: list[str] = []
+            while ready_queue and inflight < max_workers:
+                _, name = heapq.heappop(ready_queue)
+                inflight += 1
+                to_submit.append(name)
+            return to_submit
+
+        def _do_submit(name: str):
+            nonlocal inflight
+            info = dag.modules[name]
             try:
-                stdout, _ = proc.communicate(timeout=min(remaining, 0.5))
-                return proc.returncode == 0, stdout
-            except subprocess.TimeoutExpired:
-                if shutdown_event.is_set():
-                    raise ShutdownError("shutdown requested")
-    finally:
-        with _active_builds_lock:
-            _active_builds.discard(proc)
-        if proc.poll() is None:
+                fut = executor.submit(action, name, resolve(info.filepath))
+            except RuntimeError:
+                # Executor shut down (e.g. KeyboardInterrupt race) — give back
+                # the inflight slot so the scheduler doesn't deadlock.
+                with lock:
+                    inflight -= 1
+                return
+            fut.add_done_callback(lambda f, n=name: on_done(f, n))
+
+        def on_done(future: Future, module_name: str):
+            nonlocal completed_count, inflight
+
+            filepath = resolve(dag.modules[module_name].filepath)
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                proc.kill()
-            proc.wait()
+                result = future.result()
+                tr = TraversalResult(module_name, filepath, result, None)
+            except Exception as e:
+                tr = TraversalResult(module_name, filepath, None, e)
+
+            failed = tr.error is not None
+
+            with lock:
+                all_results.append(tr)
+                completed_count += 1
+                inflight -= 1
+
+                if stop_on_failure and failed:
+                    # Don't unlock successors — mark them as skipped
+                    for succ in successors_of.get(module_name, []):
+                        if succ in remaining_deps:
+                            mark_skipped(succ)
+                else:
+                    # Decrement dep counts and collect newly ready modules.
+                    # Skip-set modules that become ready are completed inline
+                    # (no action) and their successors are cascaded.
+                    cascade = [module_name]
+                    while cascade:
+                        current = cascade.pop()
+                        for succ in successors_of.get(current, []):
+                            if succ in remaining_deps and succ not in skipped:
+                                remaining_deps[succ] -= 1
+                                if remaining_deps[succ] == 0:
+                                    if succ in skip_set:
+                                        fp = resolve(dag.modules[succ].filepath)
+                                        all_results.append(TraversalResult(succ, fp))
+                                        completed_count += 1
+                                        cascade.append(succ)
+                                    else:
+                                        heapq.heappush(
+                                            ready_queue,
+                                            (-depths.get(succ, 0), succ),
+                                        )
+
+                cc = completed_count
+                sc = len(skipped)
+                to_submit = _drain_ready()
+                ic = inflight
+
+                if cc + sc >= total:
+                    done_event.set()
+
+            if module_callback:
+                module_callback(module_name, tr.result, tr.error)
+            if progress_callback:
+                progress_callback(cc, total - sc, ic)
+
+            for name in to_submit:
+                _do_submit(name)
+
+        # Process skip modules before starting the executor.  We iterate in
+        # topological order (BFS from zero-dep seeds) so that each skipped
+        # module's successors have their dep counts correctly decremented.
+        skip_set = skip or set()
+
+        if skip_set:
+            from collections import deque
+
+            skip_queue: deque[str] = deque(
+                name for name, count in remaining_deps.items()
+                if count == 0 and name in skip_set
+            )
+            while skip_queue:
+                name = skip_queue.popleft()
+                filepath = resolve(dag.modules[name].filepath)
+                all_results.append(TraversalResult(name, filepath))
+                completed_count += 1
+                for succ in successors_of.get(name, []):
+                    if succ in remaining_deps:
+                        remaining_deps[succ] -= 1
+                        if remaining_deps[succ] == 0 and succ in skip_set:
+                            skip_queue.append(succ)
+
+        executor = ThreadPoolExecutor(max_workers=max_workers)
+        try:
+            # Seed the priority queue with all zero-dep modules.
+            seeds = [
+                name for name, count in remaining_deps.items()
+                if count == 0 and name not in skip_set
+            ]
+            if not seeds and completed_count < total:
+                raise ValueError(
+                    f"No modules with zero dependencies -- possible cycle in DAG "
+                    f"({total} modules)"
+                )
+            if not seeds:
+                done_event.set()
+
+            with lock:
+                for name in seeds:
+                    heapq.heappush(ready_queue, (-depths.get(name, 0), name))
+                to_submit = _drain_ready()
+
+            for name in to_submit:
+                _do_submit(name)
+
+            # Wait until all modules are processed or skipped.
+            # We cannot use executor.shutdown(wait=True) here because on_done
+            # callbacks submit new futures — shutdown would reject them.
+            # Use a timeout loop so the main thread can receive KeyboardInterrupt
+            # (Event.wait() without timeout blocks signal delivery on Linux).
+            while not done_event.wait(timeout=0.5):
+                pass
+            executor.shutdown(wait=True)
+        except KeyboardInterrupt:
+            self.shutdown_event.set()
+            executor.shutdown(wait=False, cancel_futures=True)
+            raise
+
+        unprocessed = total - completed_count - len(skipped)
+        if unprocessed > 0:
+            unreached = [
+                name
+                for name, c in remaining_deps.items()
+                if c > 0 and name not in skipped
+            ]
+            raise ValueError(
+                f"Traversal incomplete: {completed_count}/{total} modules processed, "
+                f"{len(skipped)} skipped, {unprocessed} unreached (possible cycle). "
+                f"Examples: {unreached[:5]}"
+            )
+
+        return all_results
 
 
 @dataclass
@@ -284,7 +552,7 @@ class DAG:
     def levels_backward(self) -> list[list[str]]:
         """Compute levels for backward (downstream-first) traversal.
 
-        Useful for display/reporting. The traverse_dag function does not use
+        Useful for display/reporting. DAGTraverser.traverse does not use
         this -- it schedules dynamically for maximum parallelism.
 
         Level 0 = modules not imported by any other module in the DAG.
@@ -374,266 +642,10 @@ def traverse_dag(
     dag: DAG,
     action: Callable[[str, Path], object],
     direction: str = "backward",
-    max_workers: int | None = None,
-    module_callback: Callable[[str, object, Exception | None], None] | None = None,
-    progress_callback: Callable[[int, int, int], None] | None = None,
-    stop_on_failure: bool = False,
-    skip: set[str] | None = None,
-    weights: dict[str, int] | None = None,
+    **kwargs,
 ) -> list[TraversalResult]:
-    """Process modules in DAG order with maximum parallelism.
-
-    When more modules are ready than workers available, modules with
-    longer successor chains are scheduled first (critical-path
-    priority), ensuring that work which unblocks the most future
-    parallelism runs earliest.
-
-    Args:
-        dag: The DAG to traverse.
-        action: Callable(module_name, filepath) -> result.  Raise to signal
-                failure.
-        direction: "backward" (downstream first) or "forward" (upstream first).
-        max_workers: Thread pool size (default: cpu_count).
-        module_callback: Called after each module as (module_name, result, error).
-        progress_callback: Called after each module as (completed, total, inflight).
-        stop_on_failure: If True, when a module fails (action raises), its
-                         successors in the DAG are skipped.
-        skip: Set of module names to mark as completed without running the
-              action.  Useful after an initial build (e.g. a full ``lake build``)
-              identifies which modules are already clean.
-        weights: Optional per-module weights for critical-path priority.
-                 Modules not in the dict default to weight 0 (e.g. skip-set
-                 modules).  When None, uniform weight 1 is used.
-
-    Returns:
-        List of TraversalResult for all processed modules.
-    """
-    all_names = set(dag.modules.keys())
-
-    if direction == "backward":
-        # Process modules that nothing depends on first.
-        # A module's "dependencies" are its importers (things that import it);
-        # once all importers are done, this module can run.
-        deps_of = {
-            name: [m for m in info.importers if m in all_names]
-            for name, info in dag.modules.items()
-        }
-        successors_of = {
-            name: [m for m in info.imports if m in all_names]
-            for name, info in dag.modules.items()
-        }
-    elif direction == "forward":
-        # Process modules with no imports first.
-        deps_of = {
-            name: [m for m in info.imports if m in all_names]
-            for name, info in dag.modules.items()
-        }
-        successors_of = {
-            name: [m for m in info.importers if m in all_names]
-            for name, info in dag.modules.items()
-        }
-    else:
-        raise ValueError(f"Unknown direction: {direction!r}")
-
-    if max_workers is None:
-        max_workers = os.cpu_count() or 4
-
-    total = len(dag.modules)
-    if total == 0:
-        return []
-
-    # Pre-compute critical-path depths so we can prioritise modules
-    # that unblock the costliest chains of future work.
-    depths = _compute_depths(successors_of, weights)
-
-    lock = Lock()
-    done_event = Event()
-    remaining_deps: dict[str, int] = {
-        name: len(deps_of[name]) for name in dag.modules
-    }
-    all_results: list[TraversalResult] = []
-    completed_count = 0
-    inflight = 0
-    skipped: set[str] = set()
-
-    # Priority queue of ready modules: (-depth, name).  Negative depth
-    # gives us a max-heap so deeper chains are scheduled first.
-    ready_queue: list[tuple[int, str]] = []
-
-    def resolve(rel: Path) -> Path:
-        if dag.project_root:
-            return dag.project_root / rel
-        return rel
-
-    def mark_skipped(name: str):
-        """Recursively mark a module and all its successors as skipped."""
-        if name in skipped:
-            return
-        skipped.add(name)
-        for succ in successors_of.get(name, []):
-            if succ in remaining_deps:
-                mark_skipped(succ)
-
-    def _drain_ready() -> list[str]:
-        """Pop modules from the priority queue up to available workers.
-
-        Must be called with *lock* held.  Returns the names to submit
-        (submission itself happens outside the lock).
-        """
-        nonlocal inflight
-        to_submit: list[str] = []
-        while ready_queue and inflight < max_workers:
-            _, name = heapq.heappop(ready_queue)
-            inflight += 1
-            to_submit.append(name)
-        return to_submit
-
-    def _do_submit(name: str):
-        nonlocal inflight
-        info = dag.modules[name]
-        try:
-            fut = executor.submit(action, name, resolve(info.filepath))
-        except RuntimeError:
-            # Executor shut down (e.g. KeyboardInterrupt race) — give back
-            # the inflight slot so the scheduler doesn't deadlock.
-            with lock:
-                inflight -= 1
-            return
-        fut.add_done_callback(lambda f, n=name: on_done(f, n))
-
-    def on_done(future: Future, module_name: str):
-        nonlocal completed_count, inflight
-
-        filepath = resolve(dag.modules[module_name].filepath)
-        try:
-            result = future.result()
-            tr = TraversalResult(module_name, filepath, result, None)
-        except Exception as e:
-            tr = TraversalResult(module_name, filepath, None, e)
-
-        failed = tr.error is not None
-
-        with lock:
-            all_results.append(tr)
-            completed_count += 1
-            inflight -= 1
-
-            if stop_on_failure and failed:
-                # Don't unlock successors — mark them as skipped
-                for succ in successors_of.get(module_name, []):
-                    if succ in remaining_deps:
-                        mark_skipped(succ)
-            else:
-                # Decrement dep counts and collect newly ready modules.
-                # Skip-set modules that become ready are completed inline
-                # (no action) and their successors are cascaded.
-                cascade = [module_name]
-                while cascade:
-                    current = cascade.pop()
-                    for succ in successors_of.get(current, []):
-                        if succ in remaining_deps and succ not in skipped:
-                            remaining_deps[succ] -= 1
-                            if remaining_deps[succ] == 0:
-                                if succ in skip_set:
-                                    fp = resolve(dag.modules[succ].filepath)
-                                    all_results.append(TraversalResult(succ, fp))
-                                    completed_count += 1
-                                    cascade.append(succ)
-                                else:
-                                    heapq.heappush(
-                                        ready_queue,
-                                        (-depths.get(succ, 0), succ),
-                                    )
-
-            cc = completed_count
-            sc = len(skipped)
-            to_submit = _drain_ready()
-            ic = inflight
-
-            if cc + sc >= total:
-                done_event.set()
-
-        if module_callback:
-            module_callback(module_name, tr.result, tr.error)
-        if progress_callback:
-            progress_callback(cc, total - sc, ic)
-
-        for name in to_submit:
-            _do_submit(name)
-
-    # Process skip modules before starting the executor.  We iterate in
-    # topological order (BFS from zero-dep seeds) so that each skipped
-    # module's successors have their dep counts correctly decremented.
-    skip_set = skip or set()
-
-    if skip_set:
-        from collections import deque
-
-        skip_queue: deque[str] = deque(
-            name for name, count in remaining_deps.items()
-            if count == 0 and name in skip_set
-        )
-        while skip_queue:
-            name = skip_queue.popleft()
-            filepath = resolve(dag.modules[name].filepath)
-            all_results.append(TraversalResult(name, filepath))
-            completed_count += 1
-            for succ in successors_of.get(name, []):
-                if succ in remaining_deps:
-                    remaining_deps[succ] -= 1
-                    if remaining_deps[succ] == 0 and succ in skip_set:
-                        skip_queue.append(succ)
-
-    executor = ThreadPoolExecutor(max_workers=max_workers)
-    try:
-        # Seed the priority queue with all zero-dep modules.
-        seeds = [
-            name for name, count in remaining_deps.items()
-            if count == 0 and name not in skip_set
-        ]
-        if not seeds and completed_count < total:
-            raise ValueError(
-                f"No modules with zero dependencies -- possible cycle in DAG "
-                f"({total} modules)"
-            )
-        if not seeds:
-            done_event.set()
-
-        with lock:
-            for name in seeds:
-                heapq.heappush(ready_queue, (-depths.get(name, 0), name))
-            to_submit = _drain_ready()
-
-        for name in to_submit:
-            _do_submit(name)
-
-        # Wait until all modules are processed or skipped.
-        # We cannot use executor.shutdown(wait=True) here because on_done
-        # callbacks submit new futures — shutdown would reject them.
-        # Use a timeout loop so the main thread can receive KeyboardInterrupt
-        # (Event.wait() without timeout blocks signal delivery on Linux).
-        while not done_event.wait(timeout=0.5):
-            pass
-        executor.shutdown(wait=True)
-    except KeyboardInterrupt:
-        shutdown_event.set()
-        executor.shutdown(wait=False, cancel_futures=True)
-        raise
-
-    unprocessed = total - completed_count - len(skipped)
-    if unprocessed > 0:
-        unreached = [
-            name
-            for name, c in remaining_deps.items()
-            if c > 0 and name not in skipped
-        ]
-        raise ValueError(
-            f"Traversal incomplete: {completed_count}/{total} modules processed, "
-            f"{len(skipped)} skipped, {unprocessed} unreached (possible cycle). "
-            f"Examples: {unreached[:5]}"
-        )
-
-    return all_results
+    """Convenience wrapper: create a one-off DAGTraverser and traverse."""
+    return DAGTraverser().traverse(dag, action, direction, **kwargs)
 
 
 # ---------------------------------------------------------------------------
