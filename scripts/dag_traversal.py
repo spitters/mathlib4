@@ -141,6 +141,10 @@ class DAGTraverser:
             self._active_builds.add(proc)
         try:
             deadline = time.monotonic() + timeout
+            # We poll communicate() with a short timeout instead of using
+            # subprocess.run(timeout=...) so we can check shutdown_event
+            # between iterations — this lets Ctrl-C abort promptly even
+            # during long builds.
             while True:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
