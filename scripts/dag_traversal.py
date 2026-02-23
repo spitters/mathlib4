@@ -380,6 +380,10 @@ class DAGTraverser:
                         if remaining_deps[succ] == 0 and succ in skip_set:
                             skip_queue.append(succ)
 
+            # Update display so it doesn't sit at [0/N] during skip processing.
+            if progress_callback:
+                progress_callback(completed_count, total, 0)
+
         executor = ThreadPoolExecutor(max_workers=max_workers)
         try:
             # Seed the priority queue with all zero-dep modules.
@@ -402,6 +406,11 @@ class DAGTraverser:
 
             for name in to_submit:
                 _do_submit(name)
+
+            # Update display to show inflight count now that seeds are submitted.
+            if progress_callback and to_submit:
+                with lock:
+                    progress_callback(completed_count, total - len(skipped), inflight)
 
             # Wait until all modules are processed or skipped.
             # We cannot use executor.shutdown(wait=True) here because on_done
