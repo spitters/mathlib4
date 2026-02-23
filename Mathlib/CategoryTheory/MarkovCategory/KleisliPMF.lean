@@ -29,9 +29,11 @@ Full probability (`PMF`) rather than sub-probability (`PMF (Option α)`) is need
 * `MarkovCategory (KleisliCat PMF)` — `discard_natural` via `PMF.bind_const`
 -/
 
+@[expose] public section
+
 namespace CategoryTheory.KleisliCat
 
-open MonoidalCategory
+open MonoidalCategory ComonObj
 
 variable {α β γ : KleisliCat PMF}
 
@@ -77,24 +79,26 @@ noncomputable def assocIsoPMF (X Y Z : KleisliCat PMF) :
     (show KleisliCat PMF from (X × Y) × Z) ≅ (show KleisliCat PMF from X × (Y × Z)) where
   hom := assocHomPMF X Y Z
   inv := assocInvPMF X Y Z
-  hom_inv_id := by funext ⟨⟨x, y⟩, z⟩; simp [assocHomPMF, assocInvPMF]
-  inv_hom_id := by funext ⟨x, y, z⟩; simp [assocHomPMF, assocInvPMF]
+  hom_inv_id := by
+    funext ⟨⟨x, y⟩, z⟩; simp only [assocHomPMF, assocInvPMF, comp_apply, PMF.pure_bind, id_apply]
+  inv_hom_id := by
+    funext ⟨x, y, z⟩; simp only [assocHomPMF, assocInvPMF, comp_apply, PMF.pure_bind, id_apply]
 
 /-- Left unitor: `PUnit ⊗ X ≅ X`. -/
 noncomputable def leftUnitorPMF (X : KleisliCat PMF) :
     (show KleisliCat PMF from PUnit × X) ≅ X where
   hom := fun ⟨_, x⟩ => PMF.pure x
   inv := fun x => PMF.pure (PUnit.unit, x)
-  hom_inv_id := by funext ⟨⟨⟩, x⟩; simp
-  inv_hom_id := by funext x; simp
+  hom_inv_id := by funext ⟨⟨⟩, x⟩; simp only [comp_apply, PMF.pure_bind, id_apply]
+  inv_hom_id := by funext x; simp only [comp_apply, PMF.pure_bind, id_apply]
 
 /-- Right unitor: `X ⊗ PUnit ≅ X`. -/
 noncomputable def rightUnitorPMF (X : KleisliCat PMF) :
     (show KleisliCat PMF from X × PUnit) ≅ X where
   hom := fun ⟨x, _⟩ => PMF.pure x
   inv := fun x => PMF.pure (x, PUnit.unit)
-  hom_inv_id := by funext ⟨x, ⟨⟩⟩; simp
-  inv_hom_id := by funext x; simp
+  hom_inv_id := by funext ⟨x, ⟨⟩⟩; simp only [comp_apply, PMF.pure_bind, id_apply]
+  inv_hom_id := by funext x; simp only [comp_apply, PMF.pure_bind, id_apply]
 
 /-- Forward component of the braiding: swaps the two components. -/
 noncomputable def braidHomPMF (X Y : KleisliCat PMF) :
@@ -106,8 +110,10 @@ noncomputable def braidIsoPMF (X Y : KleisliCat PMF) :
     (show KleisliCat PMF from X × Y) ≅ (show KleisliCat PMF from Y × X) where
   hom := braidHomPMF X Y
   inv := braidHomPMF Y X
-  hom_inv_id := by funext ⟨x, y⟩; simp [braidHomPMF]
-  inv_hom_id := by funext ⟨y, x⟩; simp [braidHomPMF]
+  hom_inv_id := by
+    funext ⟨x, y⟩; simp only [braidHomPMF, comp_apply, PMF.pure_bind, id_apply]
+  inv_hom_id := by
+    funext ⟨y, x⟩; simp only [braidHomPMF, comp_apply, PMF.pure_bind, id_apply]
 
 noncomputable instance : MonoidalCategoryStruct (KleisliCat PMF) where
   tensorObj X Y := (show KleisliCat PMF from X × Y)
@@ -156,66 +162,6 @@ theorem rightUnitor_hom_eq (X : KleisliCat PMF) :
 theorem rightUnitor_inv_eq (X : KleisliCat PMF) :
     (ρ_ X).inv = (rightUnitorPMF X).inv := rfl
 
-/-! ## MonoidalCategory -/
-
-noncomputable instance : MonoidalCategory (KleisliCat PMF) where
-  tensorHom_def _ _ := rfl
-  id_tensorHom_id X₁ X₂ := by
-    funext ⟨x, y⟩; simp [whiskerLeftPMF, whiskerRightPMF]
-  tensorHom_comp_tensorHom f₁ f₂ g₁ g₂ := by
-    funext ⟨x, y⟩; simp [whiskerLeftPMF, whiskerRightPMF]
-    congr 1; funext x'
-    exact PMF.bind_comm (f₂ y) (g₁ x') _
-  whiskerLeft_id X Y := by
-    funext ⟨x, y⟩; simp [whiskerLeftPMF]
-  id_whiskerRight X Y := by
-    funext ⟨x, y⟩; simp [whiskerRightPMF]
-  associator_naturality f₁ f₂ f₃ := by
-    funext ⟨⟨x₁, x₂⟩, x₃⟩; simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF]
-  leftUnitor_naturality f := by
-    funext ⟨⟨⟩, x⟩; simp [whiskerLeftPMF, leftUnitorPMF]
-  rightUnitor_naturality f := by
-    funext ⟨x, ⟨⟩⟩; simp [whiskerRightPMF, rightUnitorPMF]
-  pentagon W X Y Z := by
-    funext ⟨⟨⟨w, x⟩, y⟩, z⟩; simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF]
-  triangle X Y := by
-    funext ⟨⟨x, ⟨⟩⟩, y⟩
-    simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, leftUnitorPMF, rightUnitorPMF]
-
-/-! ## BraidedCategory and SymmetricCategory -/
-
-noncomputable instance : BraidedCategory (KleisliCat PMF) where
-  braiding := braidIsoPMF
-  braiding_naturality_right X {Y Z} f := by
-    funext ⟨x, y⟩; simp [whiskerLeftPMF, whiskerRightPMF, braidHomPMF, braidIsoPMF]
-  braiding_naturality_left {X Y} f Z := by
-    funext ⟨x, z⟩; simp [whiskerLeftPMF, whiskerRightPMF, braidHomPMF, braidIsoPMF]
-  hexagon_forward X Y Z := by
-    funext ⟨⟨x, y⟩, z⟩
-    simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, braidHomPMF, braidIsoPMF]
-  hexagon_reverse X Y Z := by
-    funext ⟨x, y, z⟩
-    simp [whiskerLeftPMF, whiskerRightPMF, assocInvPMF, braidHomPMF, braidIsoPMF]
-
-noncomputable instance : SymmetricCategory (KleisliCat PMF) where
-  symmetry X Y := by
-    show (braidIsoPMF X Y).hom ≫ (braidIsoPMF Y X).hom = 𝟙 _
-    exact (braidIsoPMF X Y).hom_inv_id
-
-/-! ## ComonObj (copy = diagonal, delete = terminal) -/
-
-/-- Every type in `KleisliCat PMF` is a comonoid object:
-    `comul` is the diagonal and `counit` is the terminal map. -/
-noncomputable instance instComonObjPMF (X : KleisliCat PMF) : ComonObj X where
-  comul := fun x => PMF.pure (x, x)
-  counit := fun _ => PMF.pure PUnit.unit
-  counit_comul := by
-    funext x; simp [whiskerRightPMF, leftUnitorPMF]
-  comul_counit := by
-    funext x; simp [whiskerLeftPMF, rightUnitorPMF]
-  comul_assoc := by
-    funext x; simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF]
-
 @[simp]
 theorem braiding_hom_eq (X Y : KleisliCat PMF) :
     (β_ X Y).hom = braidHomPMF X Y := rfl
@@ -224,11 +170,108 @@ theorem braiding_hom_eq (X Y : KleisliCat PMF) :
 theorem braiding_inv_eq (X Y : KleisliCat PMF) :
     (β_ X Y).inv = braidHomPMF Y X := rfl
 
+/-! ## MonoidalCategory -/
+
+noncomputable instance : MonoidalCategory (KleisliCat PMF) where
+  tensorHom_def _ _ := rfl
+  id_tensorHom_id X₁ X₂ := by
+    funext ⟨x, y⟩
+    simp only [whiskerLeftPMF, whiskerRightPMF, tensorHom_eq, comp_apply, id_apply, PMF.pure_bind]
+  tensorHom_comp_tensorHom f₁ f₂ g₁ g₂ := by
+    funext ⟨x, y⟩
+    simp only [whiskerLeftPMF, whiskerRightPMF, tensorHom_eq, comp_apply, PMF.pure_bind,
+      PMF.bind_bind]
+    congr 1; funext x'
+    exact PMF.bind_comm (f₂ y) (g₁ x') _
+  whiskerLeft_id X Y := by
+    funext ⟨x, y⟩; simp only [whiskerLeftPMF, whiskerLeft_def, id_apply, PMF.pure_bind]
+  id_whiskerRight X Y := by
+    funext ⟨x, y⟩; simp only [whiskerRightPMF, whiskerRight_def, id_apply, PMF.pure_bind]
+  associator_naturality f₁ f₂ f₃ := by
+    funext ⟨⟨x₁, x₂⟩, x₃⟩
+    simp only [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, comp_apply, PMF.pure_bind,
+      PMF.bind_bind, tensorHom_eq, associator_hom_eq]
+  leftUnitor_naturality f := by
+    funext ⟨⟨⟩, x⟩
+    simp only [whiskerLeftPMF, leftUnitorPMF, leftUnitor_hom_eq, whiskerLeft_def,
+      comp_apply, PMF.pure_bind, PMF.bind_bind]
+  rightUnitor_naturality f := by
+    funext ⟨x, ⟨⟩⟩
+    simp only [whiskerRightPMF, rightUnitorPMF, rightUnitor_hom_eq, whiskerRight_def,
+      comp_apply, PMF.pure_bind, PMF.bind_bind]
+  pentagon W X Y Z := by
+    funext ⟨⟨⟨w, x⟩, y⟩, z⟩
+    simp only [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, associator_hom_eq,
+      comp_apply, PMF.pure_bind, PMF.bind_bind]
+  triangle X Y := by
+    funext ⟨⟨x, ⟨⟩⟩, y⟩
+    simp only [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, leftUnitorPMF, rightUnitorPMF,
+      associator_hom_eq, leftUnitor_hom_eq, rightUnitor_hom_eq, whiskerLeft_def,
+      whiskerRight_def, comp_apply, PMF.pure_bind, PMF.bind_bind]
+
+/-! ## BraidedCategory and SymmetricCategory -/
+
+noncomputable instance : BraidedCategory (KleisliCat PMF) where
+  braiding := braidIsoPMF
+  braiding_naturality_right X {Y Z} f := by
+    funext ⟨x, y⟩
+    simp only [whiskerLeftPMF, whiskerRightPMF, braidHomPMF, braidIsoPMF,
+      braiding_hom_eq, whiskerLeft_def, whiskerRight_def,
+      comp_apply, PMF.pure_bind, PMF.bind_bind]
+  braiding_naturality_left {X Y} f Z := by
+    funext ⟨x, z⟩
+    simp only [whiskerLeftPMF, whiskerRightPMF, braidHomPMF, braidIsoPMF,
+      braiding_hom_eq, whiskerLeft_def, whiskerRight_def,
+      comp_apply, PMF.pure_bind, PMF.bind_bind]
+  hexagon_forward X Y Z := by
+    funext ⟨⟨x, y⟩, z⟩
+    simp only [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, braidHomPMF, braidIsoPMF,
+      braiding_hom_eq, associator_hom_eq, whiskerLeft_def, whiskerRight_def,
+      comp_apply, PMF.pure_bind, PMF.bind_bind]
+  hexagon_reverse X Y Z := by
+    funext ⟨x, y, z⟩
+    simp only [whiskerLeftPMF, whiskerRightPMF, assocInvPMF, braidHomPMF, braidIsoPMF,
+      braiding_hom_eq, associator_inv_eq, whiskerLeft_def, whiskerRight_def,
+      comp_apply, PMF.pure_bind, PMF.bind_bind]
+
+noncomputable instance : SymmetricCategory (KleisliCat PMF) where
+  symmetry X Y := (braidIsoPMF X Y).hom_inv_id
+
+/-! ## ComonObj (copy = diagonal, delete = terminal) -/
+
+/-- Every type in `KleisliCat PMF` is a comonoid object:
+    `comul` is the diagonal and `counit` is the terminal map. -/
+noncomputable instance instComonObjPMF (X : KleisliCat PMF) : ComonObj X where
+  counit := fun _ => PMF.pure PUnit.unit
+  comul := fun x => PMF.pure (x, x)
+  counit_comul := by
+    funext x
+    simp only [whiskerRightPMF, leftUnitorPMF, whiskerRight_def, leftUnitor_inv_eq,
+      comp_apply, PMF.pure_bind]
+  comul_counit := by
+    funext x
+    simp only [whiskerLeftPMF, rightUnitorPMF, whiskerLeft_def, rightUnitor_inv_eq,
+      comp_apply, PMF.pure_bind]
+  comul_assoc := by
+    funext x
+    simp only [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, whiskerLeft_def, whiskerRight_def,
+      associator_hom_eq, comp_apply, PMF.pure_bind]
+
+/-- The comultiplication (copy) on `KleisliCat PMF` is the diagonal. -/
+@[simp]
+theorem comul_PMF_apply (X : KleisliCat PMF) (x : X) :
+    Δ[X] x = PMF.pure (x, x) := rfl
+
+/-- The counit (discard) on `KleisliCat PMF` is the constant map to `PUnit`. -/
+@[simp]
+theorem counit_PMF_apply (X : KleisliCat PMF) (x : X) :
+    ε[X] x = PMF.pure PUnit.unit := rfl
+
 /-- Every type in `KleisliCat PMF` is a commutative comonoid object. -/
 noncomputable instance instIsCommComonObjPMF (X : KleisliCat PMF) : IsCommComonObj X where
   comul_comm := by
     funext x
-    simp only [comp_apply, instComonObjPMF, braiding_hom_eq, braidHomPMF, PMF.pure_bind]
+    simp only [comp_apply, braiding_hom_eq, comul_PMF_apply, braidHomPMF, PMF.pure_bind]
 
 /-! ## CopyDiscardCategory -/
 
@@ -238,24 +281,25 @@ theorem tensorμ_apply (X₁ X₂ Y₁ Y₂ : KleisliCat PMF)
     tensorμ X₁ X₂ Y₁ Y₂ ((x₁, x₂), (y₁, y₂)) =
       PMF.pure ((x₁, y₁), (x₂, y₂)) := by
   simp only [tensorμ, braiding_hom_eq]
-  simp [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, assocInvPMF, braidHomPMF]
+  simp only [whiskerLeftPMF, whiskerRightPMF, assocHomPMF, assocInvPMF, braidHomPMF,
+    comp_apply, PMF.pure_bind, PMF.bind_bind]
 
 noncomputable instance : CopyDiscardCategory (KleisliCat PMF) where
   copy_tensor X Y := by
     funext ⟨x, y⟩
-    simp only [comp_apply, instComonObjPMF, tensorHom_eq, whiskerRightPMF,
-      whiskerLeftPMF, PMF.pure_bind]
+    simp only [comp_apply, comul_PMF_apply, tensorHom_eq, whiskerRightPMF, whiskerLeftPMF,
+      PMF.pure_bind]
     exact (tensorμ_apply X X Y Y x x y y).symm
   discard_tensor X Y := by
     funext ⟨x, y⟩
-    simp only [comp_apply, instComonObjPMF, tensorHom_eq, whiskerRightPMF,
-      whiskerLeftPMF, leftUnitor_hom_eq, leftUnitorPMF, PMF.pure_bind]
+    simp only [comp_apply, counit_PMF_apply, tensorHom_eq, whiskerRightPMF, whiskerLeftPMF,
+      leftUnitor_hom_eq, leftUnitorPMF, PMF.pure_bind]
   copy_unit := by
     funext ⟨⟩
-    simp only [instComonObjPMF, leftUnitor_inv_eq, leftUnitorPMF]
+    simp only [comul_PMF_apply, leftUnitor_inv_eq, leftUnitorPMF]
   discard_unit := by
     funext ⟨⟩
-    simp only [instComonObjPMF, id_apply]
+    simp only [counit_PMF_apply, id_apply]
 
 /-! ## MarkovCategory -/
 
@@ -263,7 +307,10 @@ noncomputable instance : CopyDiscardCategory (KleisliCat PMF) where
     discarding after any stochastic map equals discarding directly. -/
 noncomputable instance : MarkovCategory (KleisliCat PMF) where
   discard_natural f := by
-    funext x; simp only [comp_apply]
+    funext x
+    simp only [comp_apply, counit_PMF_apply]
     exact PMF.bind_const (f x) (PMF.pure PUnit.unit)
 
 end CategoryTheory.KleisliCat
+
+end -- @[expose] public section
