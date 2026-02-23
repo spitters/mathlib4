@@ -27,6 +27,7 @@ from set_option_utils import (
     DEFAULT_OPTIONS,
     PROJECT_DIR,
     commented_pattern,
+    lake_build_with_progress,
     lakefile_pattern,
     removable_pattern,
 )
@@ -202,9 +203,6 @@ def count_skipped(filepath: Path, options: list[str]) -> int:
     return count
 
 
-PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]")
-
-
 def initial_build():
     """Run a full lake build so all .oleans are fresh.
 
@@ -212,20 +210,8 @@ def initial_build():
     upstream modules.
     """
     print("Running initial build...", flush=True)
-    proc = subprocess.Popen(
-        ["lake", "build"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        cwd=PROJECT_DIR,
-    )
-    for line in proc.stdout:
-        m = PROGRESS_RE.search(line)
-        if m:
-            print(f"\r  [{m.group(1)}/{m.group(2)}]", end="", flush=True)
-    proc.wait()
-    print()  # newline after progress
-    if proc.returncode != 0:
+    returncode, _ = lake_build_with_progress(PROJECT_DIR)
+    if returncode != 0:
         print("  (initial build had errors — continuing anyway)")
 
 

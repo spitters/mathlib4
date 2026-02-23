@@ -26,6 +26,7 @@ from dag_traversal import (
 from set_option_utils import (
     DEFAULT_OPTIONS,
     PROJECT_DIR,
+    lake_build_with_progress,
     set_option_line,
 )
 
@@ -58,8 +59,9 @@ def _opener_cmd() -> list[str]:
 class _AddDisplay(Display):
     """Progress display for the add script."""
 
-    def __init__(self, open_on_failure: bool = False):
+    def __init__(self, dag: DAG, open_on_failure: bool = False):
         super().__init__()
+        self.dag = dag
         self.total_fixed = 0
         self.total_failed = 0
         self.open_on_failure = open_on_failure
@@ -87,8 +89,10 @@ class _AddDisplay(Display):
                 self.total_failed += 1
                 self.messages.append(f"  ! {module_name}: {error}")
                 if self.open_on_failure:
-                    filepath = module_name.replace(".", "/") + ".lean"
-                    subprocess.Popen(_opener_cmd() + [filepath], cwd=PROJECT_DIR)
+                    info = self.dag.modules.get(module_name)
+                    if info:
+                        filepath = str(info.filepath)
+                        subprocess.Popen(_opener_cmd() + [filepath], cwd=PROJECT_DIR)
             self._redraw()
 
 
@@ -165,32 +169,13 @@ def count_errors_per_module(build_output: str) -> dict[str, int]:
     return counts
 
 
-PROGRESS_RE = re.compile(r"\[(\d+)/(\d+)\]")
-
-
 def initial_build() -> tuple[set[str], str]:
     """Run a full lake build to discover which modules have errors.
 
     Returns (error_modules, build_output).
     """
     print("Running initial build...", flush=True)
-    proc = subprocess.Popen(
-        ["lake", "build"],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        cwd=PROJECT_DIR,
-    )
-    output_lines: list[str] = []
-    for line in proc.stdout:
-        output_lines.append(line)
-        m = PROGRESS_RE.search(line)
-        if m:
-            print(f"\r  [{m.group(1)}/{m.group(2)}]", end="", flush=True)
-    proc.wait()
-    print()  # newline after progress
-
-    output = "".join(output_lines)
+    _, output = lake_build_with_progress(PROJECT_DIR)
     error_mods = parse_error_modules(output)
     print(f"  {len(error_mods)} modules with errors")
     return error_mods, output
@@ -479,7 +464,7 @@ def main():
 
     # Traverse forward
     traverser = DAGTraverser()
-    display = _AddDisplay(open_on_failure=args.open)
+    display = _AddDisplay(dag, open_on_failure=args.open)
     action = make_process_module(options, args.timeout, traverser)
 
     display.start(len(dag.modules))

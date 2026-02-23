@@ -80,9 +80,9 @@ to learn about it as well!
   provided on stdin, outputs only those modules in topological order.
   Usage: `python3 scripts/topological_sort.py [--reverse]`
 
-**`backward.isDefEq.respectTransparency` migration tools**
+**Backward-compatibility `set_option` migration tools**
 
-These scripts help with testing Lean PRs that change `backward.isDefEq.respectTransparency`
+These scripts help with testing Lean PRs that change backward-compatibility option
 behaviour. They share a common DAG traversal library that parallelises work in import-graph order.
 
 - `dag_traversal.py`

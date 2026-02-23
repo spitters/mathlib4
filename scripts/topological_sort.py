@@ -6,6 +6,8 @@ in topological order; otherwise outputs all modules.
 
 By default modules are printed leaves-last: if A imports B, then B appears
 before A. Use --reverse for leaves-first order.
+
+TODO: import-graph should come with this feature.
 """
 
 import argparse
@@ -40,7 +42,7 @@ def main():
                 continue
             if line.endswith(".lean"):
                 # Convert file path (Mathlib/Foo/Bar.lean) to module name.
-                input_modules.add(line.replace("/", ".").removesuffix(".lean"))
+                input_modules.add(".".join(Path(line).with_suffix("").parts))
             else:
                 input_modules.add(line)
         if input_modules:

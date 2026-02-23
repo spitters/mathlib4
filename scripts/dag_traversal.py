@@ -27,8 +27,8 @@ Library usage:
 import argparse
 import atexit
 import heapq
+import json
 import os
-import re
 import shlex
 import signal
 import subprocess
@@ -262,13 +262,16 @@ class DAGTraverser:
             return rel
 
         def mark_skipped(name: str):
-            """Recursively mark a module and all its successors as skipped."""
-            if name in skipped:
-                return
-            skipped.add(name)
-            for succ in successors_of.get(name, []):
-                if succ in remaining_deps:
-                    mark_skipped(succ)
+            """Iteratively mark a module and all its successors as skipped."""
+            stack = [name]
+            while stack:
+                n = stack.pop()
+                if n in skipped:
+                    continue
+                skipped.add(n)
+                for succ in successors_of.get(n, []):
+                    if succ in remaining_deps and succ not in skipped:
+                        stack.append(succ)
 
         def _drain_ready() -> list[str]:
             """Pop modules from the priority queue up to available workers.
@@ -461,26 +464,60 @@ class TraversalResult:
     error: Exception | None = None
 
 
-def _parse_imports(filepath: Path) -> list[str]:
-    """Parse import statements from a .lean file.
+def _parse_all_imports(
+    filepaths: list[Path], project_root: Path, batch_size: int = 500,
+) -> dict[Path, list[str]]:
+    """Parse imports for all files using ``lean --deps-json``.
 
-    Follows the same approach as scripts/count-trans-deps.py: read lines
-    until /-! (module docstring), matching import statements along the way.
+    Returns a dict mapping each filepath to its list of imported module names.
+    Files that fail to parse are recorded with empty imports and a warning
+    is printed to stderr, so a single broken file does not abort the entire
+    DAG build.
+
+    The output entries are matched to input files by position (``lean`` emits
+    one entry per input file in the same order).
     """
-    imports = []
-    with open(filepath, "r") as f:
-        for line in f:
-            if "/-!" in line:
-                break
-            match = re.match(r"^(?:public\s+)?import\s+(\S+)", line)
-            if match:
-                imports.append(match.group(1))
-    return imports
+    result: dict[Path, list[str]] = {}
+
+    for i in range(0, len(filepaths), batch_size):
+        batch = filepaths[i : i + batch_size]
+        cmd = ["lake", "env", "lean", "--deps-json"] + [str(f) for f in batch]
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=project_root,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"lean --deps-json failed (exit {proc.returncode}):\n{proc.stderr}"
+            )
+
+        data = json.loads(proc.stdout)
+        entries = data["imports"]
+
+        if len(entries) != len(batch):
+            raise RuntimeError(
+                f"lean --deps-json returned {len(entries)} entries "
+                f"for {len(batch)} files"
+            )
+
+        for filepath, entry in zip(batch, entries):
+            if entry.get("errors"):
+                errors = "; ".join(entry["errors"])
+                print(
+                    f"warning: lean --deps-json: {filepath}: {errors}",
+                    file=sys.stderr,
+                )
+            imports: list[str] = []
+            if entry.get("result"):
+                for imp in entry["result"]["imports"]:
+                    imports.append(imp["module"])
+            result[filepath] = imports
+
+    return result
 
 
 def _filepath_to_module(filepath: str) -> str:
     """Convert a file path like Mathlib/Foo/Bar.lean to Mathlib.Foo.Bar."""
-    return filepath.replace("/", ".").removesuffix(".lean")
+    return ".".join(Path(filepath).with_suffix("").parts)
 
 
 class DAG:
@@ -499,12 +536,15 @@ class DAG:
         project_root: Path,
         directories: list[str] | None = None,
     ) -> "DAG":
-        """Build DAG by parsing imports from .lean files in directories."""
+        """Build DAG by parsing imports from .lean files in directories.
+
+        Uses ``lean --deps-json`` to parse imports correctly.
+        """
         if directories is None:
             directories = ["Mathlib", "MathlibTest", "Archive", "Counterexamples"]
 
-        modules: dict[str, ModuleInfo] = {}
-
+        # Collect all .lean file paths (relative to project_root).
+        rel_paths: list[Path] = []
         for directory in directories:
             dir_path = project_root / directory
             if not dir_path.exists():
@@ -514,14 +554,20 @@ class DAG:
                     if not fname.endswith(".lean"):
                         continue
                     full_path = Path(root) / fname
-                    rel_path = full_path.relative_to(project_root)
-                    module_name = _filepath_to_module(str(rel_path))
-                    imports = _parse_imports(full_path)
-                    modules[module_name] = ModuleInfo(
-                        name=module_name,
-                        filepath=rel_path,
-                        imports=[i for i in imports if i != module_name],
-                    )
+                    rel_paths.append(full_path.relative_to(project_root))
+
+        # Batch-parse imports using lean --deps-json.
+        all_imports = _parse_all_imports(rel_paths, project_root)
+
+        modules: dict[str, ModuleInfo] = {}
+        for rel_path in rel_paths:
+            module_name = _filepath_to_module(str(rel_path))
+            imports = all_imports.get(rel_path, [])
+            modules[module_name] = ModuleInfo(
+                name=module_name,
+                filepath=rel_path,
+                imports=[i for i in imports if i != module_name],
+            )
 
         # Build reverse edges (importers)
         for name, info in modules.items():
@@ -580,6 +626,11 @@ class DAG:
         while remaining:
             level = sorted(m for m in remaining if remaining_importers[m] == 0)
             if not level:
+                print(
+                    f"warning: cycle in import DAG, dumping {len(remaining)} "
+                    f"modules into final level",
+                    file=sys.stderr,
+                )
                 levels.append(sorted(remaining))
                 break
             levels.append(level)
