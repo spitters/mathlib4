@@ -2856,6 +2856,7 @@ public import Mathlib.CategoryTheory.LocallyCartesianClosed.Over
 public import Mathlib.CategoryTheory.LocallyCartesianClosed.Sections
 public import Mathlib.CategoryTheory.LocallyDirected
 public import Mathlib.CategoryTheory.MarkovCategory.Basic
+public import Mathlib.CategoryTheory.MarkovCategory.KleisliPMF
 public import Mathlib.CategoryTheory.Monad.Adjunction
 public import Mathlib.CategoryTheory.Monad.Algebra
 public import Mathlib.CategoryTheory.Monad.Basic
