@@ -117,7 +117,7 @@ noncomputable def braidIsoPMF (X Y : KleisliCat PMF) :
   inv_hom_id := by
     funext ⟨y, x⟩; simp only [braidHomPMF, comp_apply, PMF.pure_bind, id_apply]
 
-noncomputable instance : MonoidalCategoryStruct (KleisliCat PMF) where
+noncomputable instance : MonoidalCategoryStruct (KleisliCat.{0, 0} PMF) where
   tensorObj X Y := (show KleisliCat PMF from X × Y)
   whiskerLeft := whiskerLeftPMF
   whiskerRight := whiskerRightPMF
@@ -166,7 +166,7 @@ theorem rightUnitor_inv_eq (X : KleisliCat PMF) :
 
 /-! ## MonoidalCategory -/
 
-noncomputable instance : MonoidalCategory (KleisliCat PMF) where
+noncomputable instance : MonoidalCategory (KleisliCat.{0, 0} PMF) where
   tensorHom_def _ _ := rfl
   id_tensorHom_id X₁ X₂ := by
     funext ⟨x, y⟩
